@@ -1,8 +1,6 @@
 import abc
 import numpy as np
 
-from typing import List, Tuple
-
 
 class Region(object):
     def __init__(self, parameters, len_vector):

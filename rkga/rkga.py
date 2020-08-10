@@ -1,7 +1,5 @@
 import torch
 
-import backend
-
 from problems import tspn
 
 
@@ -26,8 +24,6 @@ class RKGAConfig(object):
     region_type = 'EllipsoidRegion'
     max_num_generations = 100
 
-    # dimention: D
-
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             self.__setattr__(k, v)
@@ -40,22 +36,22 @@ class RKGAConfig(object):
 class RandomKeyGeneticAlgorithm(RKGAConfig):
     def __init__(self, **kwargs):
         super(RandomKeyGeneticAlgorithm, self).__init__(**kwargs)
-        self.problem = None
 
         self._region_type = None
         self._region_data = None
         self._len_params = None
         self._num_regions = None
         self._len_vector = None
+
         self._fractional_data = None
         self._vector_data = None
         self._fitness_data = None
         self._solution_data = None
-        self._num_generations = 0
         self._best_index_data = None
         self._best_rank_data = None
         self._best_vector_data = None
         self._best_fitness_data = None
+        self._num_generations = 0
 
         self.__compiled = False
         self.__selected_fractional_temp_data = None
@@ -90,8 +86,7 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
 
     def initialize(self):
         self._compiled()
-        (self._fractional_data,
-         self._vector_data) = self._initialize_individuals_randomly(self.population_size)
+        self._fractional_data, self._vector_data = self._initialize_individuals_randomly(self.population_size)
 
         self.__selected_fractional_temp_data = None
         self.__selected_vector_temp_data = None
@@ -182,4 +177,3 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
     def _compiled(self):
         if not self.__compiled:
             raise ValueError('Solver has not been complied.')
-
