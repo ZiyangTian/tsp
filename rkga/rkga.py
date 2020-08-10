@@ -37,10 +37,9 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         self._num_regions = None
         self._len_vector = None
 
-        self._fractional_data = None
-        self._vector_data = None
-        self._fitness_data = None
-        self._solution_data = None
+        self._fractional_data = None  # MR
+        self._vector_data = None  # MRV
+        self._fitness_data = None  # M
         self._best_index_data = None
         self._best_rank_data = None
         self._best_vector_data = None
@@ -58,6 +57,12 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         self.__migration_vector_temp_data = None
 
     def compile(self, regions: tspn.Region, use_cuda=False):
+        """
+
+        :param regions:
+        :param use_cuda:
+        :return:
+        """
         self._use_cuda = use_cuda
 
         self._region_type = type(regions)
@@ -76,11 +81,13 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         for g in range(max_num_generations):
             self.evolute()
             best_fitness = self.maybe_numpy_tensor(self._best_fitness_data)
-            print(best_fitness)
+            print(1./best_fitness)
             if best_fitness > last_fitness:
-                descending += 1
+                descending = 0
                 if max_descending_generations is not None and descending >= max_descending_generations:
                     return g, best_fitness
+            else:
+                descending += 1
             last_fitness = best_fitness
 
     def evolute(self):
@@ -119,6 +126,7 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
             self.__selected_fractional_temp_data[indices_1],
             self.__selected_fractional_temp_data[indices_2])
 
+        # ...?
         laplace_values = self.maybe_cuda_tensor(self.crossover_laplace.sample((self.crossover_size,)))
         civ_1 = self.__selected_vector_temp_data[indices_1]
         civ_2 = self.__selected_vector_temp_data[indices_2]

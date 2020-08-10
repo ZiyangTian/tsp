@@ -33,7 +33,6 @@ class NumpyParameterClass(object):
         return len(self._shape)
 
 
-
 def set_backend(key):
     global BACKEND
     return importlib.import_module(key)
