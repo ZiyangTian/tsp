@@ -98,3 +98,19 @@ class Ellipsoid(collections.namedtuple('Ellipsoid', ('centre', 'a', 'b', 'c'))):
 
     def get_location(self, vector: Vector3D):
         return self.centre + vector * (self.a, self.b, self.c)
+
+
+class Solution(object):
+    def __init__(self, index, vector):
+        """
+
+        :param index: (..., num_regions)
+        :param vector: (..., num_regions, len_vector)
+        """
+        self.index = np.array(index)
+        self.vector = np.array(vector)
+
+    @classmethod
+    def from_structured_data(cls, data: Tuple[int, List[float]]):
+        index, vector = zip(*data)
+        return cls(index, vector)

@@ -1,4 +1,5 @@
 import importlib
+import numpy as np
 
 NUMPY = 'numpy'
 TORCH = 'torch'
@@ -6,6 +7,31 @@ TENSORFLOW = 'tensorflow'
 
 DEFAULT_BACKEND = NUMPY
 BACKEND = DEFAULT_BACKEND
+
+
+class NumpyParameterClass(object):
+    def __init__(self, *args, **kwargs):
+        self._shape = None
+        pass
+
+    def _all_equal_shape(self, *args):
+        if not args:
+            return None
+        shapes = map(lambda a: np.shape, args)
+        shape = next(shapes)
+        for s in shapes:
+            if s != shape:
+                raise ValueError('Mismatched data shapes.')
+        self._shape = shape
+
+    @property
+    def shape(self):
+        return self._shape
+
+    @property
+    def dim(self):
+        return len(self._shape)
+
 
 
 def set_backend(key):
