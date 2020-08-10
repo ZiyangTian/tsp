@@ -3,11 +3,31 @@ import rkga.rkga as rkga
 
 
 def main():
-    regions = tspn.EllipsoidRegion.from_randomly_generated(
-        (20,), [0.]*6, [1., 1., 1., 0.1, 0.1, 0.1], 3)
-    solver = rkga.RandomKeyGeneticAlgorithm(population_size=30)
-    solver.compile(regions, use_cuda=False)
-    solver.run(1000)
+    regions = tspn.EllipsoidRegion(
+        parameters=[[-9.7528, 9.58998, 0, 0, 0, 0],
+                    [6.86668, 6.20718, 0, 0, 0, 0],
+                    [6.93657, -1.47151, 0, 0, 0, 0],
+                    [-6.31879, 8.1271, 0, 0, 0, 0],
+                    [-5.18222, 3.84219, 0, 0, 0, 0],
+                    [3.11766, -6.20973, 0, 0, 0, 0],
+                    [-4.5067, -7.64914, 0, 0, 0, 0],
+                    [-8.10116, 8.62245, 0, 0, 0, 0],
+                    [-1.95271, -1.89062, 0, 0, 0, 0],
+                    [-7.21327, -7.00547, 0, 0, 0, 0],
+                    [-1.74055, -6.82545, 0, 0, 0, 0],
+                    [-3.34585, -8.61796, 0, 0, 0, 0],
+                    [9.24521, 0.213072, 0, 0, 0, 0],
+                    [-3.05319, -8.2112, 0, 0, 0, 0],
+                    [-7.3261, 2.92692, 0, 0, 0, 0],
+                    [4.17304, -7.0789, 0, 0, 0, 0],
+                    [2.51691, 1.03971, 0, 0, 0, 0],
+                    [9.12828, -0.546525, 0, 0, 0, 0],
+                    [9.5682, -7.19051, 0, 0, 0, 0],
+                    [-2.41943, -5.61402, 0, 0, 0, 0]],
+        len_vector=3)
+    solver = rkga.RandomKeyGeneticAlgorithm(population_size=10000)
+    solver.compile(regions, use_cuda=True)
+    solver.run(10000)
 
 
 if __name__ == '__main__':

@@ -84,11 +84,12 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
             print(1./best_fitness)
             if best_fitness > last_fitness:
                 descending = 0
-                if max_descending_generations is not None and descending >= max_descending_generations:
-                    return g, best_fitness
             else:
                 descending += 1
+                if max_descending_generations is not None and descending >= max_descending_generations:
+                    return g, best_fitness
             last_fitness = best_fitness
+        return g, best_fitness
 
     def evolute(self):
         self._compiled()
@@ -197,7 +198,9 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         ranks = torch.argsort(fractional, dim=-1)
         sorted_regions = self._region_data[ranks]
         waypoints = self._region_type.compute_waypoints_fn(sorted_regions, vector)
-        path_lengths = (waypoints[..., 1:, :] - waypoints[..., :-1, :]).square().sum(dim=-1).sqrt().sum(dim=-1)
+
+        tail = torch.cat([waypoints[..., 1:, :], waypoints[..., 0:1, :]], dim=-2)
+        path_lengths = (tail - waypoints).square().sum(dim=-1).sqrt().sum(dim=-1)
         fitness = 1. / path_lengths
         return fitness
 
