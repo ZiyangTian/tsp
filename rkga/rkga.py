@@ -19,10 +19,10 @@ class RKGAConfig(object):
 
     mutation_prop = 0.01
 
-    population_size = 100
+    population_size = 1000
 
     region_type = 'EllipsoidRegion'
-    max_num_generations = 100
+    max_num_generations = 10000
 
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
@@ -63,7 +63,7 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
 
     def compile(self, regions: tspn.Region):
         self._region_type = type(regions)
-        self._region_data = regions.parameters  # RP
+        self._region_data = torch.tensor(regions.parameters)  # RP
         self._len_params = regions.parameters.shape[-1]
         self._num_regions = regions.shape[0]
         self._len_vector = regions.len_vector
@@ -71,9 +71,19 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         self.__compiled = True
         self.initialize()
 
-    def run(self):
+    def run(self, max_descending_generations=None):
+        self._compiled()
+        descending = 0
+        last_fitness = 0
         for g in range(self.max_num_generations):
             self.evolute()
+            best_fitness = self._best_fitness_data.numpy()
+            print(best_fitness)
+            if best_fitness > last_fitness:
+                descending += 1
+                if max_descending_generations is not None and descending >= max_descending_generations:
+                    return g, best_fitness
+            last_fitness = best_fitness
 
     def evolute(self):
         self._compiled()
@@ -87,6 +97,8 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
     def initialize(self):
         self._compiled()
         self._fractional_data, self._vector_data = self._initialize_individuals_randomly(self.population_size)
+        self._fit()
+        self._num_generations = 0
 
         self.__selected_fractional_temp_data = None
         self.__selected_vector_temp_data = None
@@ -95,26 +107,21 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
         self.__migration_fractional_temp_data = None
         self.__migration_vector_temp_data = None
 
-        self._num_generations = 0
-        self._best_index_data = None
-        self._best_rank_data = None
-        self._best_vector_data = None
-        self._best_fitness_data = None
-
     def _select(self):
         rank = torch.argsort(self._fitness_data, descending=True)
         self.__selected_fractional_temp_data = self._fractional_data[rank][:self.selection_size]
         self.__selected_vector_temp_data = self._vector_data[rank][:self.selection_size]  # MsRV
 
     def _crossover(self):
-        indices_1 = torch.randint(low=0, high=self.crossover_size, size=(self.crossover_size,))
-        indices_2 = torch.randint(low=0, high=self.crossover_size, size=(self.crossover_size,))
-        laplace_values = self.crossover_laplace.sample((self.crossover_size,))
-        random_values = torch.rand(self.population_size)
+        indices_1 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
+        indices_2 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
+        random_values = torch.rand(self.crossover_size, self._num_regions)
         self.__crossover_fractional_temp_data = torch.where(
             random_values > self.crossover_threshold,
             self.__selected_fractional_temp_data[indices_1],
             self.__selected_fractional_temp_data[indices_2])
+
+        laplace_values = self.crossover_laplace.sample((self.crossover_size,))
         civ_1 = self.__selected_vector_temp_data[indices_1]
         civ_2 = self.__selected_vector_temp_data[indices_2]
         self.__crossover_vector_temp_data = civ_1 + laplace_values[:, None, None] * (civ_1 - civ_2)
@@ -128,7 +135,7 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
             selected_mutation_random < self.mutation_prop,
             fractional, self.__selected_fractional_temp_data)
         self.__selected_vector_temp_data = torch.where(
-            selected_mutation_random[:, :, self._len_vector] < self.mutation_prop,
+            selected_mutation_random[:, :, None] < self.mutation_prop,
             vector, self.__selected_vector_temp_data)
 
         fractional, vector = self._initialize_individuals_randomly(self.crossover_size)
@@ -136,11 +143,12 @@ class RandomKeyGeneticAlgorithm(RKGAConfig):
             crossover_mutation_random < self.mutation_prop,
             fractional, self.__crossover_fractional_temp_data)
         self.__crossover_vector_temp_data = torch.where(
-            crossover_mutation_random[:, :, self._len_vector] < self.mutation_prop,
+            crossover_mutation_random[:, :, None] < self.mutation_prop,
             vector, self.__crossover_vector_temp_data)
 
     def _migrate(self):
-        return self._initialize_individuals_randomly(self.migration_size)
+        fractional, vector = self._initialize_individuals_randomly(self.migration_size)
+        self.__migration_fractional_temp_data, self.__migration_vector_temp_data = fractional, vector
 
     def _new_generation(self):
         self._fractional_data = torch.cat([

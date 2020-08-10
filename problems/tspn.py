@@ -17,8 +17,8 @@ class Region(object):
     @classmethod
     def from_randomly_generated(cls, shape, low, high, len_vector):
         params = []
-        for l, h in zip(low, high):
-            params.append(np.random.uniform(l, h, size=shape))
+        for _l, _h in zip(low, high):
+            params.append(np.random.uniform(_l, _h, size=shape))
         return cls(np.stack(params, axis=-1), len_vector)
 
     @classmethod
