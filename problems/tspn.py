@@ -57,6 +57,6 @@ class EllipsoidNeighbor(Neighbor):
         return cls(np.stack(params, axis=-1))
 
     @classmethod
-    def compute_waypoints(self, parameters, vector):
+    def compute_waypoints(cls, parameters, vector):
         # parameters: [..., len_params], vector: [..., len_vector]
         return parameters[..., :3] + parameters[..., 3:] * vector  # [..., 3]
