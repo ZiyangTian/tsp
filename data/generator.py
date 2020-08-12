@@ -13,7 +13,7 @@ def generate_tsp_data(num_problems, num_nodes,
                       num_parallel_solvers=None,
                       max_num_generations=100,
                       max_descending_generations=1000,
-                      save_in=None,
+                      save_in=None, title_start_from=0,
                       **kwargs):
     min_val = min_val or 0.
     if type(min_val) in {float, int}:
@@ -33,7 +33,6 @@ def generate_tsp_data(num_problems, num_nodes,
             n = np.random.randint(*num_nodes)
         else:
             n = num_nodes
-        print(n)
         parameters = []
         for _min, _max in zip(min_val, max_val):
             parameters.append(np.random.uniform(_min, _max, size=(n,)))
@@ -50,9 +49,10 @@ def generate_tsp_data(num_problems, num_nodes,
             solver.compile(nodes, traceback=True, use_cuda=True)
             solution = solver.solve(max_num_generations, max_descending_generations=max_descending_generations)
 
-        file_name = '_'.join(map(str, solution.rank)) + '__' + str(time.time()) + '.csv'
-        file_path = os.path.join(save_in, file_name)
-        pd.DataFrame(parameters).to_csv(file_path, header=False, index=False)
+        with open(os.path.join(save_in, '{}.rank'.format(title_start_from + i)), 'w') as f:
+            f.write(','.join(map(str, solution.rank)))
+        pd.DataFrame(parameters).to_csv(
+            os.path.join(save_in, '{}.parameters'.format(title_start_from + i)), header=False, index=False)
 
 
 def main():
@@ -62,7 +62,7 @@ def main():
         num_parallel_solvers=None,
         max_num_generations=1000,
         max_descending_generations=100,
-        save_in='/Users/Tianziyang/Desktop/data/tsp')
+        save_in=r'E:\projects\Data\temp')
 
 
 if __name__ == '__main__':
