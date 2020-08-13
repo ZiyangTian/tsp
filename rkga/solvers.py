@@ -60,7 +60,7 @@ class _Solver(_Config):
         self._use_cuda = use_cuda
 
         self._node_type = type(nodes)
-        self._node_data = self._add_tensor(torch.tensor(nodes.parameters))  # RP
+        self._node_data = self._get_tensor(torch.tensor(nodes.parameters))  # RP
         self._traceback = traceback
         self._param_dim = nodes.parameters.shape[-1]
         self._num_nodes = nodes.shape[0]
@@ -142,7 +142,7 @@ class _Solver(_Config):
     def _fit(self):
         raise NotImplementedError('_Solver._fit')
 
-    def _add_tensor(self, tensor):
+    def _get_tensor(self, tensor):
         if not (self._use_cuda and torch.cuda.is_available()):
             return tensor
         return tensor.cuda()
@@ -191,7 +191,7 @@ class TSPSolver(_Solver):
     def _crossover(self):
         indices_1 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
         indices_2 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
-        random_values = self._add_tensor(torch.rand(self.crossover_size, self._num_nodes))
+        random_values = self._get_tensor(torch.rand(self.crossover_size, self._num_nodes))
 
         self._crossover_fractional_temp_data = torch.where(
             random_values > self.crossover_threshold,
@@ -199,8 +199,8 @@ class TSPSolver(_Solver):
             self._selected_fractional_temp_data[indices_2])
 
     def _mutate(self):
-        selected_mutation_random = self._add_tensor(torch.rand(self.selection_size, self._num_nodes))
-        crossover_mutation_random = self._add_tensor(torch.rand(self.crossover_size, self._num_nodes))
+        selected_mutation_random = self._get_tensor(torch.rand(self.selection_size, self._num_nodes))
+        crossover_mutation_random = self._get_tensor(torch.rand(self.crossover_size, self._num_nodes))
 
         fractional = self._initialize_individuals_randomly(self.selection_size)
         self._selected_fractional_temp_data = torch.where(
@@ -240,7 +240,7 @@ class TSPSolver(_Solver):
 
     def _initialize_individuals_randomly(self, n):
         fractional = torch.rand(n, self._num_nodes)  # nR
-        fractional = self._add_tensor(fractional)
+        fractional = self._get_tensor(fractional)
         return fractional
 
 
@@ -300,14 +300,14 @@ class TSPNSolver(TSPSolver):
     def _crossover(self):
         indices_1 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
         indices_2 = torch.randint(low=0, high=self.selection_size, size=(self.crossover_size,))
-        random_values = self._add_tensor(torch.rand(self.crossover_size, self._num_nodes))
+        random_values = self._get_tensor(torch.rand(self.crossover_size, self._num_nodes))
 
         self._crossover_fractional_temp_data = torch.where(
             random_values > self.crossover_threshold,
             self._selected_fractional_temp_data[indices_1],
             self._selected_fractional_temp_data[indices_2])
 
-        laplace_values = self._add_tensor(self.crossover_laplace.sample((self.crossover_size,)))
+        laplace_values = self._get_tensor(self.crossover_laplace.sample((self.crossover_size,)))
         civ_1 = self._selected_vector_temp_data[indices_1]
         civ_2 = self._selected_vector_temp_data[indices_2]
         candidate_1 = civ_1 + laplace_values[:, None, None] * (civ_1 - civ_2)
@@ -316,8 +316,8 @@ class TSPNSolver(TSPSolver):
             random_values[:, :, None] > self.crossover_threshold, candidate_1, candidate_2)
 
     def _mutate(self):
-        selected_mutation_random = self._add_tensor(torch.rand(self.selection_size, self._num_nodes))
-        crossover_mutation_random = self._add_tensor(torch.rand(self.crossover_size, self._num_nodes))
+        selected_mutation_random = self._get_tensor(torch.rand(self.selection_size, self._num_nodes))
+        crossover_mutation_random = self._get_tensor(torch.rand(self.crossover_size, self._num_nodes))
 
         fractional, vector = self._initialize_individuals_randomly(self.selection_size)
         self._selected_fractional_temp_data = torch.where(
@@ -367,5 +367,5 @@ class TSPNSolver(TSPSolver):
     def _initialize_individuals_randomly(self, n):
         fractional = super(TSPNSolver, self)._initialize_individuals_randomly(n)
         vector = torch.randn(n, self._num_nodes, self._vector_dim).softmax(dim=-1)  # nRV
-        vector = self._add_tensor(vector)
+        vector = self._get_tensor(vector)
         return fractional, vector

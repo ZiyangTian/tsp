@@ -8,6 +8,8 @@ from problems import tspn
 from rkga import solvers as rkga_solvers
 
 
+# <problem-num_nodes-job_id.param/solution>
+
 def generate_tsp_data(num_problems, num_nodes,
                       dimension=None, min_val=None, max_val=None,
                       num_parallel_solvers=None,
