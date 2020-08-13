@@ -1,5 +1,6 @@
 import abc
 import collections
+import random
 import numpy as np
 import torch
 
@@ -9,9 +10,10 @@ from problems import tspn
 class _Config(object):
     selection_proportion = 0.35  # selection proportion
     crossover_proportion = 0.55  # crossover proportion
-    crossover_threshold = 0.3  # crossover threshold
+    crossover_threshold = 0.5  # crossover threshold
     mutation_prop = 0.01  # probability of gene mutation
-    population_size = 10000  # population size.
+    opt2_prop = 0  # probability of applying opt-2 algorithm
+    population_size = 1000000  # population size.
 
     _epsilon = 1.e-6
 
@@ -32,8 +34,8 @@ class _Config(object):
 class _Solver(_Config):
     def __init__(self, **kwargs):
         super(_Solver, self).__init__(**kwargs)
-        self._node_type = None
-        self._node_data = None
+        self._problem_type = None
+        self._problem_data = None
         self._traceback = None
         self._param_dim = None
         self._num_nodes = None
@@ -50,20 +52,20 @@ class _Solver(_Config):
 
         self.__compiled = False
 
-    def compile(self, nodes, traceback=True, use_cuda=False):
+    def compile(self, problem, traceback=True, use_cuda=False):
         """Compile the solver with a concrete problem.
         Arguments:
-            nodes: A `Node` instance, representing the node parameters in the problem.
+            problem: A `TSP` instance, representing the node parameters in the problem.
             traceback: A `bool`
             use_cuda: A `bool`, whether place tensors to GPU for acceleration.
         """
         self._use_cuda = use_cuda
 
-        self._node_type = type(nodes)
-        self._node_data = self._get_tensor(torch.tensor(nodes.parameters))  # RP
+        self._problem_type = type(problem)
+        self._problem_data = self._get_tensor(torch.tensor(problem.parameters))  # RP
         self._traceback = traceback
-        self._param_dim = nodes.parameters.shape[-1]
-        self._num_nodes = nodes.shape[0]
+        self._param_dim = problem.param_dim
+        self._num_nodes = problem.num_nodes
 
         self.__compiled = True
         self.initialize()
@@ -143,9 +145,13 @@ class _Solver(_Config):
         raise NotImplementedError('_Solver._fit')
 
     def _get_tensor(self, tensor):
+        if not isinstance(tensor, torch.Tensor):
+            torch_tensor = torch.tensor(tensor)
+        else:
+            torch_tensor = tensor
         if not (self._use_cuda and torch.cuda.is_available()):
-            return tensor
-        return tensor.cuda()
+            return torch_tensor
+        return torch_tensor.cuda()
 
     @staticmethod
     def _get_numpy(tensor):
@@ -164,17 +170,38 @@ class _Solver(_Config):
             raise ValueError('{} instance has not been complied.'.format(type(self).__name__))
 
 
+def _opt2_randomly(*gene_data, device='cuda'):
+    size = gene_data[0].size()
+    index = torch.tensor([random.sample(range(size[1]), 2) for _ in range(size[0])], device=device)
+
+    def exchange(tensor):
+        exchanged_index = torch.stack([index[:, 1], index[:, 0]], dim=1)
+        full_index = torch.stack([torch.arange(size[1], device=device) for _ in torch.arange(size[0], device=device)])
+        exchanged_full_index = full_index.scatter(1, index, exchanged_index)
+        if tensor.ndim == 2:
+            exchanged_full_index, _ = torch.broadcast_tensors(exchanged_full_index, tensor)
+        else:
+            exchanged_full_index, _ = torch.broadcast_tensors(exchanged_full_index[:, :, None], tensor)
+        exchanged = tensor.gather(1, exchanged_full_index)
+        return exchanged
+
+    ans = tuple(map(exchange, gene_data))
+    if len(ans) == 1:
+        return ans[0]
+    return ans
+
+
 class TSPSolver(_Solver):
     def __init__(self, **kwargs):
         super(TSPSolver, self).__init__(**kwargs)
-        self._node_type = tspn.Node
+        self._problem_type = tspn.TSP
         self._selected_fractional_temp_data = None
         self._crossover_fractional_temp_data = None
         self._migration_fractional_temp_data = None
         self.__compiled = False
 
-    def compile(self, nodes, traceback=True, use_cuda=False):
-        super(TSPSolver, self).compile(nodes, traceback=traceback, use_cuda=use_cuda)
+    def compile(self, problem, traceback=True, use_cuda=False):
+        super(TSPSolver, self).compile(problem, traceback=traceback, use_cuda=use_cuda)
         self.__compiled = True
         self.initialize()
 
@@ -206,11 +233,27 @@ class TSPSolver(_Solver):
         self._selected_fractional_temp_data = torch.where(
             selected_mutation_random < self.mutation_prop,
             fractional, self._selected_fractional_temp_data)
-
         fractional = self._initialize_individuals_randomly(self.crossover_size)
         self._crossover_fractional_temp_data = torch.where(
             crossover_mutation_random < self.mutation_prop,
             fractional, self._crossover_fractional_temp_data)
+
+        if self.opt2_prop > 0:
+            self._opt2()
+
+    def _opt2(self):
+        selected_opt2_random = self._get_tensor(torch.rand(self.selection_size))
+        crossover_opt2_random = self._get_tensor(torch.rand(self.crossover_size))
+        device = 'cuda' if torch.cuda.is_available() and self._use_cuda else 'cpu'
+
+        self._selected_fractional_temp_data = torch.where(
+            selected_opt2_random[:, None] < self.opt2_prop,
+            _opt2_randomly(self._selected_fractional_temp_data, device=device),
+            self._selected_fractional_temp_data)
+        self._crossover_fractional_temp_data = torch.where(
+            crossover_opt2_random[:, None] < self.opt2_prop,
+            _opt2_randomly(self._crossover_fractional_temp_data, device=device),
+            self._crossover_fractional_temp_data)
 
     def _migrate(self):
         fractional = self._initialize_individuals_randomly(self.migration_size)
@@ -225,7 +268,7 @@ class TSPSolver(_Solver):
 
     def _fit(self):
         ranks = torch.argsort(self._fractional_data, dim=-1)
-        waypoints = self._node_data[ranks]
+        waypoints = self._problem_data[ranks]
         if self._traceback:
             tail = torch.cat([waypoints[..., 1:, :], waypoints[..., 0:1, :]], dim=-2)
             objective = (tail - waypoints).square().sum(dim=-1).sqrt().sum(dim=-1)
@@ -239,9 +282,7 @@ class TSPSolver(_Solver):
         self._optimal_objective_data = objective[self._optimal_index_data]
 
     def _initialize_individuals_randomly(self, n):
-        fractional = torch.rand(n, self._num_nodes)  # nR
-        fractional = self._get_tensor(fractional)
-        return fractional
+        return self._get_tensor(torch.rand(n, self._num_nodes))
 
 
 class TSPNSolver(TSPSolver):
@@ -252,7 +293,7 @@ class TSPNSolver(TSPSolver):
         super(TSPNSolver, self).__init__(**kwargs)
         self.crossover_laplace = torch.distributions.Laplace(self.crossover_laplace_lambda, self.crossover_laplace_mu)
 
-        self._node_type = None
+        self._problem_type = None
         self._vector_dim = None
         self._vector_data = None
 
@@ -261,10 +302,10 @@ class TSPNSolver(TSPSolver):
         self._migration_vector_temp_data = None
         self.__compiled = False
 
-    def compile(self, nodes, traceback=True, use_cuda=False):
-        self._vector_dim = nodes.vector_dim
-        super(TSPNSolver, self).compile(nodes, traceback=traceback, use_cuda=use_cuda)
-        self._node_type = type(nodes)
+    def compile(self, problem, traceback=True, use_cuda=False):
+        self._vector_dim = problem.vector_dim
+        super(TSPNSolver, self).compile(problem, traceback=traceback, use_cuda=use_cuda)
+        self._problem_type = type(problem)
 
     def initialize(self):
         self._compiled()
@@ -326,7 +367,6 @@ class TSPNSolver(TSPSolver):
         self._selected_vector_temp_data = torch.where(
             selected_mutation_random[:, :, None] < self.mutation_prop,
             vector, self._selected_vector_temp_data)
-
         fractional, vector = self._initialize_individuals_randomly(self.crossover_size)
         self._crossover_fractional_temp_data = torch.where(
             crossover_mutation_random < self.mutation_prop,
@@ -334,6 +374,35 @@ class TSPNSolver(TSPSolver):
         self._crossover_vector_temp_data = torch.where(
             crossover_mutation_random[:, :, None] < self.mutation_prop,
             vector, self._crossover_vector_temp_data)
+
+        if self.opt2_prop > 0:
+            self._opt2()
+
+    def _opt2(self):
+        device = 'cuda' if torch.cuda.is_available() and self._use_cuda else 'cpu'
+        selected_opt2_random = self._get_tensor(torch.rand(self.selection_size))
+        selected_fractional_opt2, selected_vector_opt2 = _opt2_randomly(
+            self._selected_fractional_temp_data, self._selected_vector_temp_data, device=device)
+        crossover_opt2_random = self._get_tensor(torch.rand(self.crossover_size))
+        crossover_fractional_opt2, crossover_vector_opt2 = _opt2_randomly(
+            self._crossover_fractional_temp_data,  self._crossover_vector_temp_data, device=device)
+
+        self._selected_fractional_temp_data = torch.where(
+            selected_opt2_random[:, None] < self.opt2_prop,
+            selected_fractional_opt2,
+            self._selected_fractional_temp_data)
+        self._selected_vector_temp_data = torch.where(
+            selected_opt2_random[:, None, None] < self.opt2_prop,
+            selected_vector_opt2,
+            self._selected_vector_temp_data)
+        self._crossover_fractional_temp_data = torch.where(
+            crossover_opt2_random[:, None] < self.opt2_prop,
+            crossover_fractional_opt2,
+            self._crossover_fractional_temp_data)
+        self._crossover_vector_temp_data = torch.where(
+            crossover_opt2_random[:, None, None] < self.opt2_prop,
+            crossover_vector_opt2,
+            self._crossover_vector_temp_data)
 
     def _migrate(self):
         fractional, vector = self._initialize_individuals_randomly(self.migration_size)
@@ -349,8 +418,8 @@ class TSPNSolver(TSPSolver):
 
     def _fit(self):
         ranks = torch.argsort(self._fractional_data, dim=-1)
-        sorted_nodes = self._node_data[ranks]
-        waypoints = self._node_type.compute_waypoints(sorted_nodes, self._vector_data)
+        sorted_nodes = self._problem_data[ranks]
+        waypoints = self._problem_type.compute_waypoints(sorted_nodes, self._vector_data)
         if self._traceback:
             tail = torch.cat([waypoints[..., 1:, :], waypoints[..., 0:1, :]], dim=-2)
             objective = (tail - waypoints).square().sum(dim=-1).sqrt().sum(dim=-1)

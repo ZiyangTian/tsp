@@ -42,7 +42,7 @@ def generate_tsp_data(num_problems, num_nodes,
             raise ValueError('`dimension` must match the sizes of `min_val` and `max_val`.')
 
         parameters = np.stack(parameters, axis=-1)
-        nodes = tspn.Node(parameters)
+        nodes = tspn.TSP(parameters)
 
         if use_multiple_solvers:
             solution = None  # TODO

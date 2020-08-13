@@ -45,12 +45,12 @@ def tsp_test():
         1, 41, 27, 11, 16, 29, 2, 12, 31, 49, 13, 39, 5, 21, 36, 34, 43, 47, 17, 44, 32, 25, 3, 19, 22,
         6, 7, 48, 28, 33, 9, 23, 45, 10, 37, 8, 24, 40, 14, 46, 30, 35, 42, 50, 18, 15, 4, 26, 38, 20, 1]) - 1
 
-    neighbors = tspn.EllipsoidNeighbor(parameters)
-    solver = solvers.TSPSolver(population_size=10000)
+    neighbors = tspn.EllipsoidTSPN(parameters)
+    solver = solvers.TSPSolver(population_size=100000)
     solver.compile(neighbors, traceback=True, use_cuda=True)
     # print(solver.solve(1000, 100))
     # exit()
-    max_num_generations = 200
+    max_num_generations = 1000
     for g in range(1, max_num_generations + 1):
         solver.evolute()
         objective = solver.optimal.objective
@@ -70,7 +70,7 @@ def tsp_test():
                 neighbors.parameters[:, 0][optimal_rank], neighbors.parameters[:, 1][optimal_rank], 'r-', color='blue')
             # plt.plot(
             #     neighbors.parameters[:, 0][rank], neighbors.parameters[:, 1][rank], 'r-', color='green')
-            plt.pause(0.001)
+            plt.pause(0.1)
     print(solver.optimal)
     waypoints = neighbors.parameters[rank]
     print(np.sqrt(np.square((waypoints[1:] - waypoints[:-1])).sum(-1)).sum())
@@ -79,14 +79,14 @@ def tsp_test():
 
 
 def tspn_test():
-    neighbors = tspn.EllipsoidNeighbor.from_randomly_generated(
+    neighbors = tspn.EllipsoidTSPN.from_randomly_generated(
         (20,),
         [0.]*6,
         [1., 1., 1., 0.1, 0.1, 0.1])
-    nodes = tspn.Node(neighbors.parameters[:, :3])
+    nodes = tspn.TSP(neighbors.parameters[:, :3])
     tsp_solver = solvers.TSPSolver(population_size=10000)
     tsp_solver.compile(nodes, use_cuda=False)
-    tspn_solver = solvers.TSPNSolver(population_size=300)
+    tspn_solver = solvers.TSPNSolver(population_size=300, opt2_prop=0.1)
     tspn_solver.compile(neighbors, use_cuda=False)
     print(tsp_solver.solve(1000).objective)
     print(tspn_solver.solve(1000).objective)
@@ -96,4 +96,4 @@ def tspn_test():
 
 
 if __name__ == '__main__':
-    tsp_test()
+    tspn_test()

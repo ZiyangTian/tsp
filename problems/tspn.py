@@ -3,9 +3,11 @@ import abc
 import numpy as np
 
 
-class Node(object):
+class TSP(object):
     def __init__(self, parameters):
         self._parameters = np.array(parameters)
+        if self._parameters.ndim != 2:
+            raise ValueError('`parameters` must be ranked 2.')
 
     @classmethod
     def load_from(cls, file, load_fn=None, **kwargs):
@@ -19,32 +21,30 @@ class Node(object):
         return self._parameters
 
     @property
-    def shape(self):
-        return self._parameters.shape[:-1]
+    def num_nodes(self):
+        return self._parameters.shape[0]
 
     @property
     def param_dim(self):
-        return self._parameters.shape[-1]
+        return self._parameters.shape[1]
 
-    def concat(self, other, axis=0):
-        if axis >= len(self.shape):
-            raise ValueError('Cannot concatenate nodes at the axis {}.'.format(axis))
-        return type(self)(np.concatenate([self._parameters, other.parameters], axis=axis))
+    def concat(self, other):
+        return type(self)(np.concatenate([self._parameters, other.parameters], axis=0))
 
 
-class Neighbor(Node):
+class TSPN(TSP):
     @property
     @abc.abstractmethod
     def vector_dim(self):
-        raise NotImplementedError('Neighbor.vector_dim')
+        raise NotImplementedError('TSPN.vector_dim')
 
     @classmethod
     @abc.abstractmethod
     def compute_waypoints(cls, parameters, vector):
-        raise NotImplementedError('Neighbor.compute_waypoints')
+        raise NotImplementedError('TSPN.compute_waypoints')
 
 
-class EllipsoidNeighbor(Neighbor):
+class EllipsoidTSPN(TSPN):
     @property
     def vector_dim(self):
         return 3
@@ -58,5 +58,5 @@ class EllipsoidNeighbor(Neighbor):
 
     @classmethod
     def compute_waypoints(cls, parameters, vector):
-        # parameters: [..., len_params], vector: [..., len_vector]
-        return parameters[..., :3] + parameters[..., 3:] * vector  # [..., 3]
+        # parameters: [num_nodes, len_params], vector: [num_nodes, len_vector]
+        return parameters[..., :3] + parameters[..., 3:] * vector  # [num_nodes, 3]
