@@ -3,11 +3,24 @@ import abc
 import numpy as np
 
 
-class TSP(object):
+class TSPNodes(object):
     def __init__(self, parameters):
         self._parameters = np.array(parameters)
-        if self._parameters.ndim != 2:
-            raise ValueError('`parameters` must be ranked 2.')
+
+    @property
+    def parameters(self):
+        return self._parameters
+
+    @property
+    def shape(self):
+        return np.shape(self._parameters.shape)[:-1]
+
+    @property
+    def param_dim(self):
+        return self._parameters.shape[-1]
+
+    def concat(self, other):
+        return type(self)(np.concatenate([self._parameters, other.parameters], axis=0))
 
     @classmethod
     def load_from(cls, file, load_fn=None, **kwargs):
@@ -16,20 +29,16 @@ class TSP(object):
         parameters = load_fn(file, **kwargs)
         return cls(parameters)
 
-    @property
-    def parameters(self):
-        return self._parameters
+
+class TSP(TSPNodes):
+    def __init__(self, parameters):
+        super(TSP, self).__init__(parameters)
+        if self._parameters.ndim != 2:
+            raise ValueError('`parameters` must be ranked 2.')
 
     @property
     def num_nodes(self):
         return self._parameters.shape[0]
-
-    @property
-    def param_dim(self):
-        return self._parameters.shape[1]
-
-    def concat(self, other):
-        return type(self)(np.concatenate([self._parameters, other.parameters], axis=0))
 
 
 class TSPN(TSP):

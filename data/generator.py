@@ -8,7 +8,35 @@ from problems import tspn
 from rkga import solvers as rkga_solvers
 
 
-# <problem-num_nodes-job_id.param/solution>
+class DataGenerator(object):
+    def __init__(self, num_problems, num_nodes,
+                      dimension=None, min_val=None, max_val=None,
+                      num_parallel_solvers=None,
+                      max_num_generations=100,
+                      max_descending_generations=1000,
+                      save_in=None, title_start_from=0,
+                      **kwargs):
+        min_val = min_val or 0.
+        if type(min_val) in {float, int}:
+            min_val = [float(min_val)] * dimension
+        self._min_val = min_val
+        max_val = max_val or 1.
+        if type(max_val) in {float, int}:
+            max_val = [float(max_val)] * dimension
+        self._max_val = max_val
+
+
+class SolverRunner(threading.Thread):
+    def __init__(self, compiled_solver, max_num_generations, max_descending_generations=None):
+        threading.Thread.__init__(self)
+        self.solver = compiled_solver
+        self.max_num_generations = max_num_generations
+        self.max_descending_generations = max_descending_generations
+        self.solution = None
+
+    def run(self):
+        self.solution = self.solver.solve(self.max_num_generations, self.max_descending_generations)
+
 
 def generate_tsp_data(num_problems, num_nodes,
                       dimension=None, min_val=None, max_val=None,
@@ -45,7 +73,15 @@ def generate_tsp_data(num_problems, num_nodes,
         nodes = tspn.TSP(parameters)
 
         if use_multiple_solvers:
-            solution = None  # TODO
+            solver_threads = []
+            for s in solvers:
+                s.compile(nodes, traceback=True, use_cuda=True)
+                thread = SolverRunner(s, max_num_generations, max_descending_generations)
+                thread.start()
+                solver_threads.append(thread)
+            for s in solver_threads:
+                s.join()
+            solution = max(map(lambda st: st.solution, solver_threads), key=lambda sl: sl.fitness)
         else:
             solver = next(solvers.__iter__())
             solver.compile(nodes, traceback=True, use_cuda=True)
@@ -61,10 +97,10 @@ def main():
     generate_tsp_data(
         2, (11, 21),
         dimension=2, min_val=None, max_val=None,
-        num_parallel_solvers=None,
+        num_parallel_solvers=3,
         max_num_generations=1000,
         max_descending_generations=100,
-        save_in=r'E:\projects\Data\temp')
+        save_in=r'/Users/Tianziyang/Desktop/data/tsp')
 
 
 if __name__ == '__main__':

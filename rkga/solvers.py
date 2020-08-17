@@ -13,7 +13,7 @@ class _Config(object):
     crossover_threshold = 0.5  # crossover threshold
     mutation_prop = 0.01  # probability of gene mutation
     opt2_prop = 0  # probability of applying opt-2 algorithm
-    population_size = 1000000  # population size.
+    population_size = 10000  # population size.
 
     _epsilon = 1.e-6
 
