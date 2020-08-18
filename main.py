@@ -181,4 +181,5 @@ def data_test():
 
 
 if __name__ == '__main__':
-    opt_test()
+    import data.generator
+    data.generator.main()
