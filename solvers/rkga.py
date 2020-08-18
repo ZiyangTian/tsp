@@ -1,6 +1,5 @@
 import abc
 import collections
-import random
 import numpy as np
 import torch
 
@@ -12,7 +11,6 @@ class _Config(object):
     crossover_proportion = 0.55  # crossover proportion
     crossover_threshold = 0.5  # crossover threshold
     mutation_prop = 0.01  # probability of gene mutation
-    opt2_prop = 0  # probability of applying opt-2 algorithm
     population_size = 10000  # population size.
 
     _epsilon = 1.e-6
@@ -52,18 +50,17 @@ class _Solver(_Config):
 
         self.__compiled = False
 
-    def compile(self, problem, traceback=True, use_cuda=False):
+    def compile(self, problem, use_cuda=False):
         """Compile the solver with a concrete problem.
         Arguments:
             problem: A `TSP` instance, representing the node parameters in the problem.
-            traceback: A `bool`
             use_cuda: A `bool`, whether place tensors to GPU for acceleration.
         """
         self._use_cuda = use_cuda
 
         self._problem_type = type(problem)
         self._problem_data = self._get_tensor(torch.tensor(problem.parameters))  # RP
-        self._traceback = traceback
+        self._traceback = problem.traceback
         self._param_dim = problem.param_dim
         self._num_nodes = problem.num_nodes
 
@@ -149,9 +146,9 @@ class _Solver(_Config):
             torch_tensor = torch.tensor(tensor)
         else:
             torch_tensor = tensor
-        if not (self._use_cuda and torch.cuda.is_available()):
-            return torch_tensor
-        return torch_tensor.cuda()
+        if self._use_cuda and torch.cuda.is_available():
+            return torch_tensor.cuda()
+        return torch_tensor
 
     @staticmethod
     def _get_numpy(tensor):
@@ -170,27 +167,6 @@ class _Solver(_Config):
             raise ValueError('{} instance has not been complied.'.format(type(self).__name__))
 
 
-def _opt2_randomly(*gene_data, device='cuda'):
-    size = gene_data[0].size()
-    index = torch.tensor([random.sample(range(size[1]), 2) for _ in range(size[0])], device=device)
-
-    def exchange(tensor):
-        exchanged_index = torch.stack([index[:, 1], index[:, 0]], dim=1)
-        full_index = torch.stack([torch.arange(size[1], device=device) for _ in torch.arange(size[0], device=device)])
-        exchanged_full_index = full_index.scatter(1, index, exchanged_index)
-        if tensor.ndim == 2:
-            exchanged_full_index, _ = torch.broadcast_tensors(exchanged_full_index, tensor)
-        else:
-            exchanged_full_index, _ = torch.broadcast_tensors(exchanged_full_index[:, :, None], tensor)
-        exchanged = tensor.gather(1, exchanged_full_index)
-        return exchanged
-
-    ans = tuple(map(exchange, gene_data))
-    if len(ans) == 1:
-        return ans[0]
-    return ans
-
-
 class TSPSolver(_Solver):
     def __init__(self, **kwargs):
         super(TSPSolver, self).__init__(**kwargs)
@@ -200,8 +176,8 @@ class TSPSolver(_Solver):
         self._migration_fractional_temp_data = None
         self.__compiled = False
 
-    def compile(self, problem, traceback=True, use_cuda=False):
-        super(TSPSolver, self).compile(problem, traceback=traceback, use_cuda=use_cuda)
+    def compile(self, problem, use_cuda=False):
+        super(TSPSolver, self).compile(problem, use_cuda=use_cuda)
         self.__compiled = True
         self.initialize()
 
@@ -237,23 +213,6 @@ class TSPSolver(_Solver):
         self._crossover_fractional_temp_data = torch.where(
             crossover_mutation_random < self.mutation_prop,
             fractional, self._crossover_fractional_temp_data)
-
-        if self.opt2_prop > 0:
-            self._opt2()
-
-    def _opt2(self):
-        selected_opt2_random = self._get_tensor(torch.rand(self.selection_size))
-        crossover_opt2_random = self._get_tensor(torch.rand(self.crossover_size))
-        device = 'cuda' if torch.cuda.is_available() and self._use_cuda else 'cpu'
-
-        self._selected_fractional_temp_data = torch.where(
-            selected_opt2_random[:, None] < self.opt2_prop,
-            _opt2_randomly(self._selected_fractional_temp_data, device=device),
-            self._selected_fractional_temp_data)
-        self._crossover_fractional_temp_data = torch.where(
-            crossover_opt2_random[:, None] < self.opt2_prop,
-            _opt2_randomly(self._crossover_fractional_temp_data, device=device),
-            self._crossover_fractional_temp_data)
 
     def _migrate(self):
         fractional = self._initialize_individuals_randomly(self.migration_size)
@@ -302,9 +261,9 @@ class TSPNSolver(TSPSolver):
         self._migration_vector_temp_data = None
         self.__compiled = False
 
-    def compile(self, problem, traceback=True, use_cuda=False):
+    def compile(self, problem, use_cuda=False):
         self._vector_dim = problem.vector_dim
-        super(TSPNSolver, self).compile(problem, traceback=traceback, use_cuda=use_cuda)
+        super(TSPNSolver, self).compile(problem, use_cuda=use_cuda)
         self._problem_type = type(problem)
 
     def initialize(self):
@@ -374,35 +333,6 @@ class TSPNSolver(TSPSolver):
         self._crossover_vector_temp_data = torch.where(
             crossover_mutation_random[:, :, None] < self.mutation_prop,
             vector, self._crossover_vector_temp_data)
-
-        if self.opt2_prop > 0:
-            self._opt2()
-
-    def _opt2(self):
-        device = 'cuda' if torch.cuda.is_available() and self._use_cuda else 'cpu'
-        selected_opt2_random = self._get_tensor(torch.rand(self.selection_size))
-        selected_fractional_opt2, selected_vector_opt2 = _opt2_randomly(
-            self._selected_fractional_temp_data, self._selected_vector_temp_data, device=device)
-        crossover_opt2_random = self._get_tensor(torch.rand(self.crossover_size))
-        crossover_fractional_opt2, crossover_vector_opt2 = _opt2_randomly(
-            self._crossover_fractional_temp_data,  self._crossover_vector_temp_data, device=device)
-
-        self._selected_fractional_temp_data = torch.where(
-            selected_opt2_random[:, None] < self.opt2_prop,
-            selected_fractional_opt2,
-            self._selected_fractional_temp_data)
-        self._selected_vector_temp_data = torch.where(
-            selected_opt2_random[:, None, None] < self.opt2_prop,
-            selected_vector_opt2,
-            self._selected_vector_temp_data)
-        self._crossover_fractional_temp_data = torch.where(
-            crossover_opt2_random[:, None] < self.opt2_prop,
-            crossover_fractional_opt2,
-            self._crossover_fractional_temp_data)
-        self._crossover_vector_temp_data = torch.where(
-            crossover_opt2_random[:, None, None] < self.opt2_prop,
-            crossover_vector_opt2,
-            self._crossover_vector_temp_data)
 
     def _migrate(self):
         fractional, vector = self._initialize_individuals_randomly(self.migration_size)

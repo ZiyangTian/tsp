@@ -95,12 +95,13 @@ def generate_tsp_data(num_problems, num_nodes,
 
 def main():
     generate_tsp_data(
-        2, (11, 21),
+        5, (41, 51),
         dimension=2, min_val=None, max_val=None,
-        num_parallel_solvers=3,
+        num_parallel_solvers=5,
         max_num_generations=1000,
         max_descending_generations=100,
-        save_in=r'/Users/Tianziyang/Desktop/data/tsp')
+        save_in=r'/Users/Tianziyang/Desktop/data/tsp',
+        title_start_from=0)
 
 
 if __name__ == '__main__':
