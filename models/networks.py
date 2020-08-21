@@ -1,69 +1,58 @@
+"""Pointer networks."""
 import torch
-from torch.utils import data as torch_data
 
+from torch.nn.utils import rnn as rnn_utils
 
 from models import data
+from models import attention
 
 
-class Encoder(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, dropout=0.):
-        super(Encoder, self).__init__()
-        self.hidden_size = hidden_size
+class PointerEncoder(torch.nn.Module):
+    """Encoder of a pointer network.
+        Arguments:
+            input_size: Dimension of the inputs.
+            rnn: RNN module.
+            dropout: Dropout probability.
+    """
+    def __init__(self, input_size, rnn, dropout=0.):
+        # type: (PointerEncoder, int, torch.nn.RNNBase, float) -> None
+        super(PointerEncoder, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = rnn.hidden_size
 
-        self.linear = torch.nn.Linear(input_size, hidden_size)
+        self.linear = torch.nn.Linear(input_size, self.hidden_size)
         self.dropout = torch.nn.Dropout(dropout)
-        self.gru = torch.nn.GRU(hidden_size, hidden_size, num_layers=num_layers)
+        self.rnn = rnn
 
     def forward(self, inputs, lengths):
-        """
-
-        :param inputs: max_len, batch_size, 2
-        :param lengths: batch_size
-        :return:
+        # type: (PointerEncoder, torch.Tensor, torch.Tensor) -> (torch.Tensor, torch.Tensor)
+        """Forward propagation function.
+        Arguments:
+            inputs: Padded encoder inputs of shape (max_length, batch_size, input_size).
+            lengths: Sequence lengths of each example. Shape: (batch_size,)
+        Returns:
+            padded_rnn_outputs: Padded encoder outputs of shape (max_length, batch_size, hidden_size).
+            hidden: Hidden states of shape (num_rnn_layers, batch_size, hidden_size).
         """
         rnn_inputs = self.linear(inputs)
         rnn_inputs = self.dropout(rnn_inputs)
-        packed_rnn_inputs = torch.nn.utils.rnn.pack_padded_sequence(rnn_inputs, lengths, enforce_sorted=False)
-        packed_rnn_outputs, hidden = self.gru(packed_rnn_inputs)
-        padded_rnn_outputs, _ = torch.nn.utils.rnn.pad_packed_sequence(packed_rnn_outputs)
-        return padded_rnn_outputs, hidden
+        packed_rnn_inputs = rnn_utils.pack_padded_sequence(rnn_inputs, lengths, enforce_sorted=False)
+        packed_rnn_outputs, hidden = self.rnn(packed_rnn_inputs)
+        padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs)
+        return padded_outputs, hidden
 
 
-class BahdanauAttention(torch.nn.Module):
-    def __init__(self, hidden_size):
-        super(BahdanauAttention, self).__init__()
-        self.w1 = torch.nn.Linear(hidden_size, hidden_size)
-        self.w2 = torch.nn.Linear(hidden_size, hidden_size)
-        self.v = torch.nn.Linear(hidden_size, 1)
+class PointerDecoder(torch.nn.Module):
+    def __init__(self, input_size, rnn, attention_mechanism, dropout=0.):
+        # type: (PointerDecoder, int, torch.nn.RNNBase, attention.Attention, float) -> None
+        super(PointerDecoder, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = rnn.hidden_size
 
-    def forward(self, query, values):
-        # query hidden state shape == (1, batch_size, hidden size)
-        # values shape == (max_len, batch_size, hidden size)
-        query = query.permute(1, 0, 2)
-        values = values.permute(1, 0, 2)
-
-        # score shape == (batch_size, max_length, 1)
-        score = self.v(torch.tanh(self.w1(query) + self.w2(values)))
-
-        # attention_weights shape == (batch_size, max_len, 1)
-        attention_weights = torch.nn.functional.softmax(score, dim=1)
-
-        context_vector = attention_weights * values
-        context_vector = context_vector.sum(dim=1)  # (batch_size, hidden_size)
-
-        return attention_weights, context_vector
-
-
-class Decoder(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, drouput):
-        super(Decoder, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        self.linear = torch.nn.Linear(input_size, hidden_size)
-        self.dropout = torch.nn.Dropout(drouput)
-        self.gru = torch.nn.GRU(2 * hidden_size, hidden_size, num_layers=num_layers)
-        self.attention = BahdanauAttention(hidden_size)
+        self.linear = torch.nn.Linear(input_size, self.hidden_size)
+        self.dropout = torch.nn.Dropout(dropout)
+        self.attention = attention_mechanism
+        self.rnn = rnn
 
     def forward(self, hidden, encoder_outputs, inputs):
         """
@@ -90,11 +79,16 @@ class Decoder(torch.nn.Module):
 
 
 class PointerNetwork(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, encoder_rnn_layers, decoder_rnn_layers,
-                 encoder_dropout=0., decoder_dropout=0.):
+    def __init__(self, encoder, decoder):
+        # type: (PointerNetwork, PointerEncoder, PointerDecoder) -> None
         super(PointerNetwork, self).__init__()
-        self.encoder = Encoder(input_size, hidden_size, encoder_rnn_layers, encoder_dropout)
-        self.decoder = Decoder(input_size, hidden_size, decoder_rnn_layers, decoder_dropout)
+        self.input_size = encoder.input_size
+        self.hidden_size = encoder.hidden_size
+        if self.hidden_size != decoder.hidden_size:
+            raise ValueError
+
+        self.encoder = encoder
+        self.decoder = decoder
 
     def forward(self, inputs, lengths, targets=None):
         """
