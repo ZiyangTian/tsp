@@ -1,10 +1,12 @@
 """Pointer networks."""
+import functools
 import torch
 
+from typing import Any, Dict, Optional, Type
 from torch.nn.utils import rnn as rnn_utils
 
-from models import data
-from models import attention
+from models import attentions
+from models import utils
 
 
 class PointerEncoder(torch.nn.Module):
@@ -43,39 +45,57 @@ class PointerEncoder(torch.nn.Module):
 
 
 class PointerDecoder(torch.nn.Module):
-    def __init__(self, input_size, rnn, attention_mechanism, dropout=0.):
-        # type: (PointerDecoder, int, torch.nn.RNNBase, attention.Attention, float) -> None
+    def __init__(self, input_size, rnn, attention, dropout=0.):
+        # type: (PointerDecoder, int, torch.nn.RNNBase, attentions.Attention, float) -> None
         super(PointerDecoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = rnn.hidden_size
 
         self.linear = torch.nn.Linear(input_size, self.hidden_size)
         self.dropout = torch.nn.Dropout(dropout)
-        self.attention = attention_mechanism
+        self.attention = functools.partial(attention, value=None)
         self.rnn = rnn
 
-    def forward(self, hidden, encoder_outputs, inputs):
+    def forward(self, inputs, encoder_outputs, encoder_hidden, target_ranks=None):
+        # type: (PointerDecoder, torch.Tensor, torch.Tensor, torch.Tensor, Optional[None, torch.Tensor]) -> (torch.Tensor, torch.Tensor)
+        """Forward propagation function.
+        Arguments:
+            inputs: Padded inputs of shape (max_len, batch_size, input_size). Must be identity to
+                the encoder input.
+            encoder_outputs: Encoder output of shape (max_len, batch_size, hidden_size)
+            encoder_hidden: Encoder hidden state of shape (num_encoder_rnn_layers, batch_size, hidden_size)
+            target_ranks (optional): Ground truth of output ranks. Shape (max_len, batch_size).
+                If specified, use teacher forcing.
+        Returns:
+            output_scores: Pointer probabilities with insignificant padding, shape (max_len-1, batch_size, max_len).
+            ranks: Predicted ranks with insignificant padding, shape (max_len, batch_size).
         """
-        :param inputs: (batch_size, input_size) for teacher forcing,
-            or (max_len, batch_size, input_size) for inference.
-        :param hidden: num_layers, batch_size, hidden_size
-        :param encoder_outputs: max_len, batch_size, hidden_size
-        :return:
-        """
-        # hidden = hidden.mean(dim=0, keepdim=True)
-        attention_weights, context_vector = self.attention(hidden.mean(dim=0, keepdim=True), encoder_outputs)
-        output = attention_weights  # (batch_size, max_len, 1)
-
-        if inputs.ndim == 3:
-            output = torch.argmax(torch.squeeze(output, dim=-1), dim=1)
-            inputs, output = torch.broadcast_tensors(inputs.permute(1, 0, 2), output[:, None, None])
-            inputs = torch.gather(inputs, 1, output.to(dtype=torch.int64))[:, 0, :]
-        else:
-            inputs = inputs[None, ...]
         rnn_inputs = self.linear(inputs)
-        rnn_inputs = self.dropout(rnn_inputs)
-        _, hidden = self.gru(torch.cat([rnn_inputs, context_vector[None, ...]], dim=-1), hidden)
-        return output, hidden
+        max_len, batch_size, _ = rnn_inputs.shape
+        initial_input_index = torch.zeros(1, batch_size, dtype=torch.int64)
+
+        if target_ranks is not None:
+            decoder_inputs = utils.permute_inputs(rnn_inputs, target_ranks)
+            decoder_outputs, _ = self.rnn(decoder_inputs, encoder_hidden)
+            output_scores = self.attention(
+                decoder_outputs.permute(1, 0, 2),
+                encoder_outputs.permute(1, 0, 2)).permute(1, 0, 2)[:-1]  # (max_len-1, batch_size, max_len)
+        else:
+            hidden = encoder_hidden
+            input_index = initial_input_index
+            attention_scores = []
+            for i in range(max_len - 1):
+                rnn_input = utils.permute_inputs(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
+                rnn_output, hidden = self.rnn(rnn_input, hidden)
+                attention_score = self.attention(
+                    rnn_output.permute(1, 0, 2),
+                    encoder_outputs.permute(1, 0, 2)).permute(1, 0, 2)
+                input_index = attention_score.argmax(dim=-1)  # (batch_size)
+                attention_scores.append(attention_score)
+            output_scores = torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
+        ranks = output_scores.argmax(dim=-1)
+        ranks = torch.cat([initial_input_index, ranks], dim=0)
+        return output_scores, ranks
 
 
 class PointerNetwork(torch.nn.Module):
@@ -90,62 +110,31 @@ class PointerNetwork(torch.nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, inputs, lengths, targets=None):
-        """
+    def forward(self, inputs, lengths, target_ranks=None):
+        encoder_outputs, encoder_hidden = self.encoder(inputs, lengths)
+        output_scores, ranks = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
+        return output_scores, ranks
 
-        :param inputs: max_len, batch_size, 2
-        :param lengths: batch_size
-        :param targets: max_len, batch_size
-        :return:
-        """
-        max_len, batch_size, input_size = inputs.shape
-        encoder_outputs, hidden = self.encoder(inputs, lengths)
+    @classmethod
+    def from_config(cls, config):
+        # type: (Type, Dict[str, Any]) -> PointerNetwork
+        input_size = config.pop('input_size')
+        hidden_size = config.pop('hidden_size')
+        rnn_layers = config.pop('rnn_layers', 1)
+        encoder_dropout = config.pop('encoder_dropout', 0.)
+        encoder_rnn_type = config.pop('encoder_rnn_type', torch.nn.LSTM)
+        encoder_rnn_dropout = config.pop('encoder_rnn_dropout', 0.)
+        decoder_dropout = config.pop('decoder_dropout', 0.)
+        decoder_rnn_type = config.pop('decoder_rnn_type', torch.nn.LSTM)
+        decoder_rnn_dropout = config.pop('decoder_rnn_dropout', 0.)
+        attention_mechanism = config.pop('attention_mechanism', attentions.BahdanauAttention)
 
-        if self.training:  # teacher forcing
-            inputs_, targets_ = torch.broadcast_tensors(inputs.permute(1, 0, 2), targets.permute(1, 0)[..., None])
-            decoder_inputs = torch.gather(inputs_, 1, targets_.to(dtype=torch.int64)).permute(1, 0, 2)
-            # max_len, batch_size, 2
-        else:
-            decoder_inputs = inputs
-
-        decoder_outputs = []
-        for i in range(max_len):
-            if self.training:
-                output, hidden = self.decoder(hidden, encoder_outputs, inputs=decoder_inputs[i])
-            else:
-                output, hidden = self.decoder(hidden, encoder_outputs, inputs=decoder_inputs)
-            decoder_outputs.append(output)
-        outputs = torch.cat(decoder_outputs, dim=-1)
-        return outputs.permute(0, 2, 1)  # batch_size, source_max_len, target_max_len
-
-
-def loss_fn(inputs, targets, length=None):
-    """
-
-    :param inputs: batch_size, source_max_len, target_max_len
-    :param targets: max_len, batch_size
-    :param length: batch_size
-    :return:
-    """
-    max_len = targets.shape[0]
-    mask = torch.where(torch.arange(max_len)[None, :] < length[:, None], torch.tensor(1.), torch.tensor(0.))
-    loss = torch.nn.functional.cross_entropy(
-        inputs.permute(0, 2, 1), targets.permute(1, 0).to(dtype=torch.int64), reduction='none') * mask
-    loss = torch.mean(loss)
-    return loss
-
-
-def main():
-    pattern = r'/Users/Tianziyang/Desktop/data/tsp/*'
-    dl = data.TSPDataLoader(pattern, batch_size=5)
-    for parameters, rank, lengths in dl:
-        break
-
-    model = PointerNetwork(2, 8, 2, 2, 0.1, 0.1)
-    y = model(parameters, lengths, rank)
-    loss = loss_fn(y, rank, lengths)
-    print(y.shape, loss)
-
-
-if __name__ == '__main__':
-    main()
+        encoder_rnn = encoder_rnn_type(
+            hidden_size, hidden_size, rnn_layers, dropout=encoder_rnn_dropout, bidirectional=False)
+        encoder = PointerEncoder(input_size, encoder_rnn, dropout=encoder_dropout)
+        decoder_rnn = decoder_rnn_type(
+            hidden_size, hidden_size, rnn_layers, dropout=decoder_rnn_dropout, bidirectional=False)
+        attention = attention_mechanism(hidden_size)
+        decoder = PointerDecoder(input_size, decoder_rnn, attention, dropout=decoder_dropout)
+        model = cls(encoder, decoder)
+        return model

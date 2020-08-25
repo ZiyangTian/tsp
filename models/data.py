@@ -36,7 +36,7 @@ class TSPDataset(torch_data.Dataset):
         if self.shift_rank_randomly:
             random_int = random.randint(0, length)
             rank = rank[random_int:] + rank[: random_int]
-        rank = torch.tensor(rank, dtype=torch.int)
+        rank = torch.tensor(rank, dtype=torch.int64)
         return parameters, rank, torch.tensor(length)
 
     def __len__(self):
