@@ -1,4 +1,5 @@
 import tqdm
+import time
 import torch
 
 from models import attentions
@@ -19,13 +20,13 @@ class TSPModel(object):
     decoder_rnn_type = torch.nn.LSTM
     decoder_rnn_dropout = 0.
     attention_mechanism = attentions.BahdanauAttention
-
+    "2-1-1"
     optimizer_object = torch.optim.Adam
     learning_rate = 0.01
     optimizer_kwargs = {}
 
     train_pattern = None
-    train_batch_size = 128
+    train_batch_size = 2
 
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
@@ -51,10 +52,13 @@ class TSPModel(object):
         self.network.train()
         self.optimizer.zero_grad()
 
-        for t in range(num_epochs):
-            for padded_parameters, padded_ranks, lengths in self.train_data_loader:
-                results = self.train_step(padded_parameters, padded_ranks, lengths)
-                print(results['loss'])
+        for e in range(num_epochs):
+            with tqdm.trange(len(self.train_data_loader)) as t:
+                t.set_description('Epoch {}'.format(e))
+                for _, (padded_parameters, padded_ranks, lengths) in zip(t, self.train_data_loader):
+                    time.sleep(0.5)
+                    results = self.train_step(padded_parameters, padded_ranks, lengths)
+                    t.set_postfix(loss=results['loss'])
 
     def train_step(self, padded_parameters, padded_ranks, lengths):
         output_scores, ranks = self.network(padded_parameters, lengths, padded_ranks)
@@ -79,7 +83,7 @@ def main():
     # loss = losses.tsp_loss_fn(output_scores, rank, lengths)
     # print(output_scores.shape, ranks.shape, loss)
     model = TSPModel(train_pattern=pattern)
-    model.train(100)
+    model.train(10000)
 
 
 if __name__ == '__main__':

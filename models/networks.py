@@ -21,6 +21,7 @@ class PointerEncoder(torch.nn.Module):
         super(PointerEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = rnn.hidden_size
+        self.num_layers = rnn.num_layers
 
         self.linear = torch.nn.Linear(input_size, self.hidden_size)
         self.dropout = torch.nn.Dropout(dropout)
@@ -45,11 +46,19 @@ class PointerEncoder(torch.nn.Module):
 
 
 class PointerDecoder(torch.nn.Module):
+    """Decoder of a pointer network.
+        Arguments:
+            input_size: Dimension of the inputs.
+            rnn: RNN module.
+            attention: Attention object.
+            dropout: Dropout probability.
+    """
     def __init__(self, input_size, rnn, attention, dropout=0.):
         # type: (PointerDecoder, int, torch.nn.RNNBase, attentions.Attention, float) -> None
         super(PointerDecoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = rnn.hidden_size
+        self.num_layers = rnn.num_layers
 
         self.linear = torch.nn.Linear(input_size, self.hidden_size)
         self.dropout = torch.nn.Dropout(dropout)
@@ -99,18 +108,37 @@ class PointerDecoder(torch.nn.Module):
 
 
 class PointerNetwork(torch.nn.Module):
+    """Pointer network.
+        Arguments:
+            encoder: Encoder of the pointer network.
+            decoder: Dncoder of the pointer network.
+        Raises:
+            ValueError: If the RNN parameters of the encoder and the decoder are incompatible.
+    """
     def __init__(self, encoder, decoder):
         # type: (PointerNetwork, PointerEncoder, PointerDecoder) -> None
         super(PointerNetwork, self).__init__()
         self.input_size = encoder.input_size
         self.hidden_size = encoder.hidden_size
-        if self.hidden_size != decoder.hidden_size:
-            raise ValueError
+        self.num_layers = encoder.num_layers
+        if self.hidden_size != decoder.hidden_size or self.num_layers != decoder.num_layers:
+            raise ValueError('Incompatible RNN parameters of the encoder and the decoder.')
 
         self.encoder = encoder
         self.decoder = decoder
 
     def forward(self, inputs, lengths, target_ranks=None):
+        # type: (PointerNetwork, torch.Tensor, torch.Tensor, Optional[None, torch.Tensor]) -> (torch.Tensor, torch.Tensor)
+        """Forward propagation function.
+        Arguments:
+            inputs: Padded inputs of shape (max_len, batch_size, input_size).
+            lengths: Sequence lengths of each example. Shape: (batch_size,)
+            target_ranks: (optional): Ground truth of output ranks. Shape (max_len, batch_size).
+                If specified, use teacher forcing.
+        Returns:
+            output_scores: Pointer probabilities with insignificant padding, shape (max_len-1, batch_size, max_len).
+            ranks: Predicted ranks with insignificant padding, shape (max_len, batch_size).
+        """
         encoder_outputs, encoder_hidden = self.encoder(inputs, lengths)
         output_scores, ranks = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
         return output_scores, ranks

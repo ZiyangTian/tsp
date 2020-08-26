@@ -10,6 +10,7 @@ class TSPLoss(torch.nn.Module):
         :param length: Valid lengths of each example. Shape (batch_size,).
         :return:
         """
+        del self
         max_len = targets.shape[0]
         mask = torch.where(torch.arange(max_len)[None, :] < length[:, None], torch.tensor(1.), torch.tensor(0.))
         loss = torch.nn.functional.cross_entropy(
