@@ -1,11 +1,10 @@
 import tqdm
-import time
 import torch
 
 from models import attentions
-from models import data
-from models import networks
 from models import losses
+from models import metrics
+from models import networks
 
 
 class TSPModel(object):
@@ -20,18 +19,72 @@ class TSPModel(object):
     decoder_rnn_type = torch.nn.LSTM
     decoder_rnn_dropout = 0.
     attention_mechanism = attentions.BahdanauAttention
-    "2-1-1"
-    optimizer_object = torch.optim.Adam
+
+    optimizer_obj = torch.optim.Adam
     learning_rate = 0.01
     optimizer_kwargs = {}
-
-    train_pattern = None
-    train_batch_size = 2
 
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             self.__setattr__(k, v)
 
+        self.network = self._build_network()
+        self.optimizer = self.optimizer_obj(self.network.parameters(), self.learning_rate, **self.optimizer_kwargs)
+        self.loss_fn = losses.TSPLoss()
+        self.metric_fns = {
+            'val_loss': metrics.TSPLoss(),
+            'bidirectional_accuracy': metrics.BidirectionalAccuracy(),
+            'journey_mae': metrics.JourneyMAE(),
+            'journey_mre': metrics.JourneyMRE()}
+
+    def fit(self, train_data_loader, valid_data_loader, num_epochs):
+        history = dict(zip(['loss'] + list(self.metric_fns.keys()), [[] for _ in range(5)]))
+
+        for epoch in range(1, 1 + num_epochs):
+            # train
+            self.network.train()
+            batch_losses = 0.
+
+            with tqdm.trange(len(train_data_loader)) as t:
+                t.set_description('Epoch {} training'.format(epoch))
+                for n, (inputs, targets, lengths) in zip(t, train_data_loader):
+                    loss = self.train_step(inputs, targets, lengths)
+                    batch_losses += loss
+                    t.set_postfix(loss=loss)
+                history['loss'].append(batch_losses / (n + 1))
+            # evaluate
+            results = self.evaluate(valid_data_loader)
+            for k, v in results.items():
+                history[k].append(v)
+
+        return history
+
+    def evaluate(self, data_loader):
+        self.network.eval()
+
+        with tqdm.trange(len(data_loader)) as t:
+            t.set_description('Evaluation')
+            for _, (inputs, targets, lengths) in zip(t, data_loader):
+                results = self.eval_step(inputs, targets, lengths)
+                t.set_postfix(**results)
+        return results
+
+    def train_step(self, inputs, targets, lengths):
+        logits = self.network(inputs, lengths, targets)
+        loss = self.loss_fn(logits, targets, lengths)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return loss.item()
+
+    def eval_step(self, inputs, targets, lengths):
+        logits = self.network(inputs, lengths, None)
+        evaluations = {}
+        for k, v in self.metric_fns:
+            evaluations.update({k: v(inputs, logits, targets, lengths)})
+        return evaluations
+
+    def _build_network(self):
         encoder_rnn = self.encoder_rnn_type(
             self.hidden_size, self.hidden_size, self.rnn_layers,
             dropout=self.encoder_rnn_dropout, bidirectional=False)
@@ -41,50 +94,4 @@ class TSPModel(object):
             dropout=self.decoder_rnn_dropout, bidirectional=False)
         attention = self.attention_mechanism(self.hidden_size)
         decoder = networks.PointerDecoder(self.param_dim, decoder_rnn, attention, dropout=self.decoder_dropout)
-
-        self.network = networks.PointerNetwork(encoder, decoder)
-        self.optimizer = self.optimizer_object(self.network.parameters(), self.learning_rate, **self.optimizer_kwargs)
-        self.criterion = losses.TSPLoss()
-        self.train_data_loader = data.TSPDataLoader(
-            self.train_pattern, shift_rank_randomly=False, batch_size=self.train_batch_size, shuffle=False)
-
-    def train(self, num_epochs):
-        self.network.train()
-        self.optimizer.zero_grad()
-
-        for e in range(num_epochs):
-            with tqdm.trange(len(self.train_data_loader)) as t:
-                t.set_description('Epoch {}'.format(e))
-                for _, (padded_parameters, padded_ranks, lengths) in zip(t, self.train_data_loader):
-                    time.sleep(0.5)
-                    results = self.train_step(padded_parameters, padded_ranks, lengths)
-                    t.set_postfix(loss=results['loss'])
-
-    def train_step(self, padded_parameters, padded_ranks, lengths):
-        output_scores, ranks = self.network(padded_parameters, lengths, padded_ranks)
-        loss = self.criterion(output_scores, ranks, lengths)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        return {
-            'loss': loss.item(),
-        }
-
-
-def main():
-    pattern = r'/Users/Tianziyang/Desktop/data/tsp/*'
-    # dl = data.TSPDataLoader(pattern, batch_size=5)
-    # for parameters, rank, lengths in dl:
-    #     break
-    # print(parameters.shape, rank.shape, lengths.shape)
-#
-    # model = networks.PointerNetwork.from_config({'input_size': 2, 'hidden_size': 8})
-    # output_scores, ranks = model(parameters, lengths)
-    # loss = losses.tsp_loss_fn(output_scores, rank, lengths)
-    # print(output_scores.shape, ranks.shape, loss)
-    model = TSPModel(train_pattern=pattern)
-    model.train(10000)
-
-
-if __name__ == '__main__':
-    main()
+        return networks.PointerNetwork(encoder, decoder)

@@ -17,8 +17,8 @@ def plot_tsp(prefix):
 
 
 def main():
-    pattern = r'../demo/data.txt'
-    dl = datasets.TSPDataLoader(pattern, batch_size=1)
+    pattern = '/Users/Tianziyang/Desktop/data/tsp/tsp.train'
+    dl = datasets.TSPDataLoader(pattern, batch_size=1, shuffle=True)
     for i, (p, r, _) in enumerate(dl):
         if i == 3:
             parameters = p[:, 0, :].numpy()

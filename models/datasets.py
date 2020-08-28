@@ -48,7 +48,7 @@ class TSPDataset(torch_data.Dataset):
         rank = np.array(list(map(int, rank_part.split(','))))
         num_nodes = len(rank)
         parameters = np.array(list(map(float, parameter_part.split(',')))).reshape((num_nodes, -1))
-        return (torch.tensor(parameters, dtype=torch.float64),
+        return (torch.tensor(parameters, dtype=torch.float),
                 torch.tensor(rank, dtype=torch.int64),
                 torch.tensor(num_nodes))
 
@@ -79,16 +79,3 @@ class TSPDataLoader(torch_data.DataLoader):
 
         super(TSPDataLoader, self).__init__(
             dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn, **kwargs)
-
-
-def main():
-    pattern = r'../demo/data.txt'
-    dl = TSPDataLoader(pattern, batch_size=2)
-    for x, y, z in dl:
-        # print(x.shape, y.shape, z.shape)
-        print(x, y, z)
-        break
-
-
-if __name__ == '__main__':
-    main()

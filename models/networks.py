@@ -102,16 +102,14 @@ class PointerDecoder(torch.nn.Module):
                 input_index = attention_score.argmax(dim=-1)  # (batch_size)
                 attention_scores.append(attention_score)
             output_scores = torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
-        ranks = output_scores.argmax(dim=-1)
-        ranks = torch.cat([initial_input_index, ranks], dim=0)
-        return output_scores, ranks
+        return output_scores
 
 
 class PointerNetwork(torch.nn.Module):
     """Pointer network.
         Arguments:
             encoder: Encoder of the pointer network.
-            decoder: Dncoder of the pointer network.
+            decoder: Decoder of the pointer network.
         Raises:
             ValueError: If the RNN parameters of the encoder and the decoder are incompatible.
     """
@@ -132,16 +130,20 @@ class PointerNetwork(torch.nn.Module):
         """Forward propagation function.
         Arguments:
             inputs: Padded inputs of shape (max_len, batch_size, input_size).
-            lengths: Sequence lengths of each example. Shape: (batch_size,)
+            lengths: Sequence lengths of each example. Shape: (batch_size,).
             target_ranks: (optional): Ground truth of output ranks. Shape (max_len, batch_size).
                 If specified, use teacher forcing.
         Returns:
-            output_scores: Pointer probabilities with insignificant padding, shape (max_len-1, batch_size, max_len).
-            ranks: Predicted ranks with insignificant padding, shape (max_len, batch_size).
+            output_scores: Pointer probabilities with insignificant padding, shape (max_len, batch_size, max_len).
         """
+        max_len, batch_size, _ = inputs.size()
         encoder_outputs, encoder_hidden = self.encoder(inputs, lengths)
-        output_scores, ranks = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
-        return output_scores, ranks
+        output_scores = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
+        first_logit = torch.nn.functional.one_hot(  # Manually adding the prediction for the first step.
+            torch.zeros(batch_size, dtype=torch.int64),
+            num_classes=max_len).to(dtype=output_scores.dtype)[None, ...]
+        logits = torch.cat([first_logit, output_scores], dim=0)
+        return logits
 
     @classmethod
     def from_config(cls, config):
