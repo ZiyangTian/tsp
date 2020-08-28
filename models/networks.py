@@ -141,7 +141,7 @@ class PointerNetwork(torch.nn.Module):
         output_scores = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
         first_logit = torch.nn.functional.one_hot(  # Manually adding the prediction for the first step.
             torch.zeros(batch_size, dtype=torch.int64),
-            num_classes=max_len).to(dtype=output_scores.dtype)[None, ...]
+            num_classes=max_len).to(dtype=output_scores.dtype)[None, ...] * 10e9
         logits = torch.cat([first_logit, output_scores], dim=0)
         return logits
 

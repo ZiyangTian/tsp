@@ -16,7 +16,7 @@ class Metric(torch.nn.Module):
     def reset_states(self):
         pass
 
-    def update_state(self, *args, **kwargs):
+    def forward(self, *args, **kwargs):
         pass
 
     def result(self):
@@ -34,10 +34,11 @@ class MeanMetric(Metric):
         self.total = torch.zeros(())
         self.count = torch.zeros(())
 
-    def update_state(self, *args, **kwargs):
+    def forward(self, *args, **kwargs):
         batch_metric_value = self.fn(*args, **kwargs)
         self.total += batch_metric_value.sum()
         self.count += batch_metric_value.size()[0]
+        return self.result()
 
     def result(self):
         return self.total / self.count.to(dtype=self.total.dtype)
@@ -45,29 +46,27 @@ class MeanMetric(Metric):
 
 class TSPLoss(MeanMetric):
     def __init__(self):
-        def metric_fn(inputs, logits, targets, lengths):
-            del inputs
+        def metric_fn(_, logits, targets, lengths):
             return losses.batch_tsp_loss(logits, targets, lengths)
 
         super(TSPLoss, self).__init__(metric_fn)
 
 
-def batch_bidirectional_accuracy(inputs, logits, targets, lengths):
+def batch_bidirectional_accuracy(_, logits, targets, lengths):
     # type: (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor) -> torch.Tensor
-    del inputs
 
     preds = logits.argmax(dim=-1).permute(1, 0)
     targets = targets.permute(1, 0)
     accuracies = []
     for o, t, l in zip(preds, targets, lengths):
         acc = max(
-            torch.mean((o[: lengths] == t[:lengths]).to(dtype=targets.dtype)),
-            torch.mean((o[: lengths].flip(0) == t[:lengths]).to(dtype=targets.dtype)))
+            torch.mean((o[: l] == t[:l]).to(dtype=logits.dtype)),
+            torch.mean((o[: l].flip(0) == t[:l]).to(dtype=logits.dtype)))
         accuracies.append(acc)
     return torch.tensor(accuracies)
 
 
-def _batch_journey_error(inputs, logits, targets):  # padded with zeros.
+def _batch_journey_error(inputs, logits, targets, lengths):  # padded with zeros.
     preds = logits.argmax(dim=-1)
     max_len, batch_size = preds.shape
 
@@ -81,14 +80,12 @@ def _batch_journey_error(inputs, logits, targets):  # padded with zeros.
 
 
 def batch_journey_mae(inputs, logits, targets, lengths):  # padded with zeros.
-    del lengths
-    pred, truth = _batch_journey_error(inputs, logits, targets)
+    pred, truth = _batch_journey_error(inputs, logits, targets, lengths)
     return pred - truth  # usually > 0
 
 
 def batch_journey_mre(inputs, logits, targets, lengths):
-    del lengths
-    pred, truth = _batch_journey_error(inputs, logits, targets)
+    pred, truth = _batch_journey_error(inputs, logits, targets, lengths)
     return (pred - truth) / (truth + 1.e-6)
 
 

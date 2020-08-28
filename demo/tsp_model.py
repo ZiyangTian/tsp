@@ -6,9 +6,9 @@ from models import tsp
 
 
 def main():
-    train_pattern = '/Users/Tianziyang/Desktop/data/tsp/tsp.train'
-    valid_pattern = '/Users/Tianziyang/Desktop/data/tsp/tsp.valid'
-    test_pattern = '/Users/Tianziyang/Desktop/data/tsp/tsp.test'
+    train_pattern = r'E:\Programs\DataSets\tsp\tsp.train'
+    valid_pattern = r'E:\Programs\DataSets\tsp\tsp.valid'
+    test_pattern = r'E:\Programs\DataSets\tsp\tsp.test'
     train_data_loader = datasets.TSPDataLoader(train_pattern, batch_size=128, shuffle=True)
     valid_data_loader = datasets.TSPDataLoader(valid_pattern, batch_size=128, shuffle=False)
     test_data_loader = datasets.TSPDataLoader(test_pattern, batch_size=128, shuffle=False)

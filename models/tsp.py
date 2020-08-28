@@ -62,12 +62,14 @@ class TSPModel(object):
     def evaluate(self, data_loader):
         self.network.eval()
 
+        for v in self.metric_fns.values():
+            v.reset_states()
         with tqdm.trange(len(data_loader)) as t:
             t.set_description('Evaluation')
             for _, (inputs, targets, lengths) in zip(t, data_loader):
                 results = self.eval_step(inputs, targets, lengths)
                 t.set_postfix(**results)
-        return results
+        return {k: v.result().item() for (k, v) in self.metric_fns.items()}
 
     def train_step(self, inputs, targets, lengths):
         logits = self.network(inputs, lengths, targets)
@@ -80,8 +82,8 @@ class TSPModel(object):
     def eval_step(self, inputs, targets, lengths):
         logits = self.network(inputs, lengths, None)
         evaluations = {}
-        for k, v in self.metric_fns:
-            evaluations.update({k: v(inputs, logits, targets, lengths)})
+        for k, v in self.metric_fns.items():
+            evaluations.update({k: v(inputs, logits, targets, lengths).item()})
         return evaluations
 
     def _build_network(self):
