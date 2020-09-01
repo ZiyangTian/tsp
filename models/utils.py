@@ -8,15 +8,15 @@ def permute_tensor(sequence, ranks):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
     """Forward propagation function.
         Arguments:
-            sequence: Padded tensor of shape (input_length, batch_size, input_size). Must be identity to
+            sequence: Padded tensor of shape (batch_size, input_length, input_size). Must be identity to
                 the encoder input.
-            ranks (optional): Ground truth of output ranks. Shape (target_length, batch_size).
+            ranks (optional): Ground truth of output ranks. Shape (batch_size, target_length).
                 If specified, use teacher forcing.
         Returns:
-            permuted_inputs: Permuted inputs of shape (target_length, batch_size, input_size).
+            permuted_inputs: Permuted inputs of shape (batch_size, target_length, input_size).
         """
     ranks = torch.stack([ranks] * sequence.shape[-1], dim=-1)
-    permuted_inputs = torch.gather(sequence, 0, ranks)
+    permuted_inputs = torch.gather(sequence, 1, ranks)
     return permuted_inputs
 
 
@@ -76,11 +76,19 @@ def batch_steps_mask(steps, dtype=torch.bool):
     return torch.stack(masks, dim=0)
 
 
-def masked_rnn(rnn, inputs, lengths, hidden=None):
-    packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False)
-    packed_rnn_outputs, hidden = rnn(packed_rnn_inputs, hidden)
-    padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs)
-    return padded_outputs, hidden
+def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
+    packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False, batch_first=True)
+    packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
+    padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)
+    return padded_outputs, hidden_state
+
+
+def combine_masks(*masks, dtype=None):
+    masks = torch.broadcast_tensors(*masks)
+    mask = torch.ones_like(masks[0], dtype=torch.bool)
+    for m in masks:
+        mask = torch.logical_and(mask, m.to(dtype=torch.bool))
+    return mask.to(dtype=dtype or masks[0].dtype)
 
 
 def main():

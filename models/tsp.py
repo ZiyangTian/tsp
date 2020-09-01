@@ -11,14 +11,14 @@ class TSPModel(object):
     param_dim = 2
 
     hidden_size = 128
-    rnn_layers = 2
-    encoder_dropout = 0.
-    encoder_rnn_type = torch.nn.LSTM
+    rnn_layers = 1
+    rnn_type = torch.nn.LSTM
+    rnn_bidirectional = False
+    input_dropout = 0.
     encoder_rnn_dropout = 0.
-    decoder_dropout = 0.
-    decoder_rnn_type = torch.nn.LSTM
     decoder_rnn_dropout = 0.
     attention_mechanism = attentions.BahdanauAttention
+    attention_hidden_size = None
 
     optimizer_obj = torch.optim.Adam
     learning_rate = 0.001
@@ -28,7 +28,17 @@ class TSPModel(object):
         for k, v in kwargs.items():
             self.__setattr__(k, v)
 
-        self.network = self._build_network()
+        self.network = networks.PointerNetwork(
+            input_size=self.param_dim,
+            hidden_size=self.hidden_size,
+            rnn_type=self.rnn_type,
+            rnn_layers=self.rnn_layers,
+            rnn_bidirectional=self.rnn_bidirectional,
+            input_dropout=self.input_dropout,
+            encoder_rnn_dropout=self.encoder_rnn_dropout,
+            decoder_rnn_dropout=self.decoder_rnn_dropout,
+            attention_mechanism=self.attention_mechanism,
+            attention_hidden_size=self.attention_hidden_size)
         self.optimizer = self.optimizer_obj(self.network.parameters(), self.learning_rate, **self.optimizer_kwargs)
         self.loss_fn = losses.TSPLoss()
         self.metric_fns = {
@@ -72,7 +82,7 @@ class TSPModel(object):
         return {k: v.result().item() for (k, v) in self.metric_fns.items()}
 
     def train_step(self, inputs, targets, lengths):
-        logits = self.network(inputs, lengths, target_ranks=targets)
+        logits = self.network(inputs, lengths=lengths, targets=targets)
         loss = self.loss_fn(logits, targets, lengths)
         loss.backward()
         self.optimizer.step()
@@ -85,15 +95,3 @@ class TSPModel(object):
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, logits, targets, lengths).item()})
         return evaluations
-
-    def _build_network(self):
-        encoder_rnn = self.encoder_rnn_type(
-            self.hidden_size, self.hidden_size, self.rnn_layers,
-            dropout=self.encoder_rnn_dropout, bidirectional=False)
-        encoder = networks.PointerEncoder(self.param_dim, encoder_rnn, dropout=self.encoder_dropout)
-        decoder_rnn = self.decoder_rnn_type(
-            self.hidden_size, self.hidden_size, self.rnn_layers,
-            dropout=self.decoder_rnn_dropout, bidirectional=False)
-        attention = self.attention_mechanism(self.hidden_size)
-        decoder = networks.PointerDecoder(self.param_dim, decoder_rnn, attention, dropout=self.decoder_dropout)
-        return networks.PointerNetwork(encoder, decoder)
