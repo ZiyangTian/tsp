@@ -59,7 +59,6 @@ class TSPDataLoader(torch_data.DataLoader):
             pattern: A `str`, data file pattern.
             batch_size: An `int`, batch size.
             shuffle: An `bool`, whether to shuffle the dataset.
-            time_major: A `bool`, Whether the time dimension of output `parameters` be the first.
             kwargs: Parallel arguments for build the data loader, see `torch.utils.data.DataLoader`.
         Outputs:
             A `tuple` of (parameters, ranks, num_nodes).
@@ -71,8 +70,8 @@ class TSPDataLoader(torch_data.DataLoader):
                     (batch_size, max_len).
                 num_nodes: A `torch.int64` tensor of shape (batch_size,), the number of nodes.
     """
-    def __init__(self, pattern, batch_size=1, shuffle=False, time_major=True, **kwargs):
-        # type: (TSPDataLoader, str, int, bool, bool, Dict) -> None
+    def __init__(self, pattern, batch_size=1, shuffle=False, **kwargs):
+        # type: (TSPDataLoader, str, int, bool, Dict) -> None
         files = glob.glob(pattern)
         dataset = sum(map(TSPDataset, files), TSPDataset())
 
@@ -81,9 +80,6 @@ class TSPDataLoader(torch_data.DataLoader):
             parameters = torch.nn.utils.rnn.pad_sequence(parameters)
             ranks = torch.nn.utils.rnn.pad_sequence(ranks)
             num_nodes = torch.stack(num_nodes)
-            if not time_major:
-                parameters = parameters.permute(1, 0, 2)
-                ranks = ranks.permute(1, 0)
             return parameters, ranks, num_nodes
 
         super(TSPDataLoader, self).__init__(
