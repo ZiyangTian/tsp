@@ -21,7 +21,7 @@ class TSPModel(object):
     attention_mechanism = attentions.BahdanauAttention
 
     optimizer_obj = torch.optim.Adam
-    learning_rate = 0.01
+    learning_rate = 0.001
     optimizer_kwargs = {}
 
     def __init__(self, **kwargs):
@@ -72,11 +72,11 @@ class TSPModel(object):
         return {k: v.result().item() for (k, v) in self.metric_fns.items()}
 
     def train_step(self, inputs, targets, lengths):
-        logits = self.network(inputs, lengths, targets)
+        logits = self.network(inputs, lengths, target_ranks=targets)
         loss = self.loss_fn(logits, targets, lengths)
-        self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        self.optimizer.zero_grad()
         return loss.item()
 
     def eval_step(self, inputs, targets, lengths):

@@ -72,9 +72,9 @@ def _batch_journey_error(inputs, logits, targets, lengths):  # padded with zeros
 
     pred_ranks = torch.cat([preds, torch.zeros(1, batch_size, dtype=preds.dtype)], dim=0)
     targets = torch.cat([targets, torch.zeros(1, batch_size, dtype=preds.dtype)], dim=0)
-    pred = model_utils.permute_inputs(inputs, pred_ranks)
+    pred = model_utils.permute_tensor(inputs, pred_ranks)
     pred = (pred[1:] - pred[:-1]).square().sum(dim=-1).sqrt().sum(dim=0)
-    truth = model_utils.permute_inputs(inputs, targets)
+    truth = model_utils.permute_tensor(inputs, targets)
     truth = (truth[1:] - truth[:-1]).square().sum(dim=-1).sqrt().sum(dim=0)
     return pred, truth
 

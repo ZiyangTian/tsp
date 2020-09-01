@@ -65,7 +65,7 @@ class PointerDecoder(torch.nn.Module):
         self.attention = functools.partial(attention, value=None)
         self.rnn = rnn
 
-    def forward(self, inputs, encoder_outputs, encoder_hidden, target_ranks=None):
+    def forward(self, inputs, lengths, encoder_outputs, encoder_hidden, target_ranks=None):
         # type: (PointerDecoder, torch.Tensor, torch.Tensor, torch.Tensor, Optional[None, torch.Tensor]) -> (torch.Tensor, torch.Tensor)
         """Forward propagation function.
         Arguments:
@@ -75,8 +75,9 @@ class PointerDecoder(torch.nn.Module):
             encoder_hidden: Encoder hidden state of shape (num_encoder_rnn_layers, batch_size, hidden_size)
             target_ranks (optional): Ground truth of output ranks. Shape (max_len, batch_size).
                 If specified, use teacher forcing.
+            lengths:
         Returns:
-            output_scores: Pointer probabilities with insignificant padding, shape (max_len-1, batch_size, max_len).
+            logits: Pointer probabilities with insignificant padding, shape (max_len, batch_size, max_len).
             ranks: Predicted ranks with insignificant padding, shape (max_len, batch_size).
         """
         rnn_inputs = self.linear(inputs)
@@ -84,25 +85,30 @@ class PointerDecoder(torch.nn.Module):
         initial_input_index = torch.zeros(1, batch_size, dtype=torch.int64)
 
         if target_ranks is not None:
-            decoder_inputs = utils.permute_inputs(rnn_inputs, target_ranks)
-            decoder_outputs, _ = self.rnn(decoder_inputs, encoder_hidden)
-            output_scores = self.attention(
-                decoder_outputs.permute(1, 0, 2),
-                encoder_outputs.permute(1, 0, 2)).permute(1, 0, 2)[:-1]  # (max_len-1, batch_size, max_len)
+            decoder_inputs = utils.permute_tensor(encoder_outputs, target_ranks)
+
+            packed_rnn_inputs = rnn_utils.pack_padded_sequence(decoder_inputs, lengths, enforce_sorted=False)
+            packed_rnn_outputs, hidden = self.rnn(packed_rnn_inputs, encoder_hidden)
+            padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs)
+
+            # decoder_outputs, _ = self.rnn(decoder_inputs, encoder_hidden)
+            padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
+            steps_mask = utils.batch_steps_mask(target_ranks)  # (max_len, batch_size, max_len)
+            mask = torch.logical_and(padding_mask.t().unsqueeze(dim=-1), padding_mask.unsqueeze(dim=0))
+            mask = torch.logical_and(mask, steps_mask)
+            logits = self.attention(padded_outputs, encoder_outputs, mask=mask).permute
         else:
             hidden = encoder_hidden
             input_index = initial_input_index
             attention_scores = []
             for i in range(max_len - 1):
-                rnn_input = utils.permute_inputs(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
+                rnn_input = utils.permute_tensor(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
                 rnn_output, hidden = self.rnn(rnn_input, hidden)
-                attention_score = self.attention(
-                    rnn_output.permute(1, 0, 2),
-                    encoder_outputs.permute(1, 0, 2)).permute(1, 0, 2)
+                attention_score = self.attention(rnn_output, encoder_outputs).permute(1, 0, 2)
                 input_index = attention_score.argmax(dim=-1)  # (batch_size)
                 attention_scores.append(attention_score)
-            output_scores = torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
-        return output_scores
+            logits = torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
+        return logits
 
 
 class PointerNetwork(torch.nn.Module):
@@ -138,7 +144,7 @@ class PointerNetwork(torch.nn.Module):
         """
         max_len, batch_size, _ = inputs.size()
         encoder_outputs, encoder_hidden = self.encoder(inputs, lengths)
-        output_scores = self.decoder(inputs, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
+        output_scores = self.decoder(inputs, lengths, encoder_outputs, encoder_hidden, target_ranks=target_ranks)
         first_logit = torch.nn.functional.one_hot(  # Manually adding the prediction for the first step.
             torch.zeros(batch_size, dtype=torch.int64),
             num_classes=max_len).to(dtype=output_scores.dtype)[None, ...] * 10e9
