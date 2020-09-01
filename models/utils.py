@@ -35,16 +35,16 @@ def batch_sequence_mask(lengths, max_len=None, dtype=torch.bool):
     return (torch.arange(max_len)[None, :] < lengths[:, None]).to(dtype=dtype)
 
 
-def parallel_batch_permutation_mask(permutations):
-    # (max_len, batch_size) must be a full permutation
-    max_len, batch_size = permutations.size()
-    indices = torch.arange(max_len)
-    # a = torch.where(indices[:, None, None] - indices_last >= 1, permutations.unsqueeze(-1), indices_last)
-    permutations, bools = torch.broadcast_tensors(
-        permutations.permute(1, 0).unsqueeze(0),
-        indices[:, None, None] - indices[None, None, :] <= 0)
-    mask = torch.ones(max_len, batch_size, max_len, dtype=torch.bool).scatter(-1, permutations, bools)
-    return mask
+# def parallel_batch_permutation_mask(permutations):
+#     # (max_len, batch_size) must be a full permutation
+#     max_len, batch_size = permutations.size()
+#     indices = torch.arange(max_len)
+#     # a = torch.where(indices[:, None, None] - indices_last >= 1, permutations.unsqueeze(-1), indices_last)
+#     permutations, bools = torch.broadcast_tensors(
+#         permutations.permute(1, 0).unsqueeze(0),
+#         indices[:, None, None] - indices[None, None, :] <= 0)
+#     mask = torch.ones(max_len, batch_size, max_len, dtype=torch.bool).scatter(-1, permutations, bools)
+#     return mask
 
 
 def batch_step_mask(masked, decoded):
@@ -62,25 +62,27 @@ def batch_step_mask(masked, decoded):
 def batch_steps_mask(steps, dtype=torch.bool):
     """Create a step mask by masking decoded position at each step.
         Arguments:
-            steps: The index sequence of shape (max_len, batch_size).
+            steps: The index sequence of shape (batch_size, max_len).
             dtype: Output data type.
         Returns:
-            A mask of shape (max_len, batch_size, max_len).
+            A mask of shape (batch_size, max_len, max_len).
     """
-    max_len, batch_size = steps.size()
+    batch_size, max_len = steps.size()
     masked = torch.ones(batch_size, max_len, dtype=dtype)
     masks = [masked]
     for i in range(max_len - 1):
-        masked = batch_step_mask(masked, steps[i])
+        masked = batch_step_mask(masked, steps[:, i])
         masks.append(masked)
-    return torch.stack(masks, dim=0)
+    return torch.stack(masks, dim=1)
 
 
-def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
-    packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False, batch_first=True)
-    packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
-    padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)
-    return padded_outputs, hidden_state
+# def attention_mask(targets=None, lengths=None):
+#     padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
+#     steps_mask = utils.batch_steps_mask(targets)  # (batch_size, max_len, max_len)
+#     attention_mask = utils.combine_masks(
+#         padding_mask.unsqueeze(dim=-1),
+#         padding_mask.unsqueeze(dim=-2),
+#         steps_mask)
 
 
 def combine_masks(*masks, dtype=None):
@@ -91,12 +93,20 @@ def combine_masks(*masks, dtype=None):
     return mask.to(dtype=dtype or masks[0].dtype)
 
 
+def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
+    print(inputs.shape, lengths.shape)
+    packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False, batch_first=True)
+    packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
+    padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)
+    return padded_outputs, hidden_state
+
+
 def main():
     permutations = torch.tensor([
         [0, 3, 0, 4, 1],
         [0, 2, 1, 0, 0],
-        [0, 1, 4, 2, 3]]).permute(1, 0)
-    mask = batch_steps_mask(permutations, dtype=torch.int).permute(1, 0, 2)
+        [0, 1, 4, 2, 3]])
+    mask = batch_steps_mask(permutations, dtype=torch.int)
     print(mask)
 
     # d = torch.tensor([0, 3, 1])

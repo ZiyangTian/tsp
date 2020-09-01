@@ -84,6 +84,7 @@ class PointerNetwork(torch.nn.Module):
             return torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
 
         # Teacher forcing mode.
+        print(hidden_state)
         decoder_rnn_inputs = utils.permute_tensor(encoder_outputs, targets)
         decoder_rnn_outputs, _ = utils.dynamic_rnn(self.decoder_rnn, decoder_rnn_inputs, hidden_state)
 

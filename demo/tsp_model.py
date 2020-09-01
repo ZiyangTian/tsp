@@ -9,9 +9,9 @@ def main():
     train_pattern = r'E:\Programs\DataSets\tsp\tsp.train'
     valid_pattern = r'E:\Programs\DataSets\tsp\tsp.valid'
     test_pattern = r'E:\Programs\DataSets\tsp\tsp.test'
-    train_data_loader = datasets.TSPDataLoader(train_pattern, batch_size=32, shuffle=True, time_major=False)
-    valid_data_loader = datasets.TSPDataLoader(valid_pattern, batch_size=32, shuffle=False, time_major=False)
-    test_data_loader = datasets.TSPDataLoader(test_pattern, batch_size=32, shuffle=False, time_major=False)
+    train_data_loader = datasets.TSPDataLoader(train_pattern, batch_size=32, shuffle=True)
+    valid_data_loader = datasets.TSPDataLoader(valid_pattern, batch_size=32, shuffle=False)
+    test_data_loader = datasets.TSPDataLoader(test_pattern, batch_size=32, shuffle=False)
 
     model = tsp.TSPModel(
         param_dim=2,

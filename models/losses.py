@@ -7,7 +7,7 @@ def batch_tsp_loss(logits, targets, lengths):
     # logits: (max_len, batch_size, max_len)
     # targets: (max_len, batch_size)
     # lengths: (batch_size, )
-    mask = model_utils.batch_sequence_mask(lengths, logits.size()[0], dtype=logits.dtype)
+    mask = model_utils.batch_sequence_mask(lengths, logits.size()[1], dtype=logits.dtype)
     loss = torch.nn.functional.cross_entropy(
         logits.permute(0, 2, 1), targets, reduction='none') * mask
     loss = loss.mean(dim=-1)

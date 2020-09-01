@@ -77,8 +77,8 @@ class TSPDataLoader(torch_data.DataLoader):
 
         def collate_fn(examples):
             parameters, ranks, num_nodes = zip(*examples)
-            parameters = torch.nn.utils.rnn.pad_sequence(parameters)
-            ranks = torch.nn.utils.rnn.pad_sequence(ranks)
+            parameters = torch.nn.utils.rnn.pad_sequence(parameters, batch_first=True)
+            ranks = torch.nn.utils.rnn.pad_sequence(ranks, batch_first=True)
             num_nodes = torch.stack(num_nodes)
             return parameters, ranks, num_nodes
 
