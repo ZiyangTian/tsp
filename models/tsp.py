@@ -13,7 +13,6 @@ class TSPModel(object):
     hidden_size = 128
     rnn_layers = 1
     rnn_type = torch.nn.LSTM
-    rnn_bidirectional = False
     input_dropout = 0.
     encoder_rnn_dropout = 0.
     decoder_rnn_dropout = 0.
@@ -33,7 +32,6 @@ class TSPModel(object):
             hidden_size=self.hidden_size,
             rnn_type=self.rnn_type,
             rnn_layers=self.rnn_layers,
-            rnn_bidirectional=self.rnn_bidirectional,
             input_dropout=self.input_dropout,
             encoder_rnn_dropout=self.encoder_rnn_dropout,
             decoder_rnn_dropout=self.decoder_rnn_dropout,
@@ -63,9 +61,9 @@ class TSPModel(object):
                     t.set_postfix(loss=loss)
                 history['loss'].append(batch_losses / (n + 1))
             # evaluate
-            results = self.evaluate(valid_data_loader)
-            for k, v in results.items():
-                history[k].append(v)
+            # results = self.evaluate(valid_data_loader)
+            # for k, v in results.items():
+            #     history[k].append(v)
 
         return history
 

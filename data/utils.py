@@ -21,8 +21,8 @@ def main():
     dl = datasets.TSPDataLoader(pattern, batch_size=1, shuffle=True)
     for i, (p, r, _) in enumerate(dl):
         if i == 3:
-            parameters = p[:, 0, :].numpy()
-            rank = r[:, 0].numpy()
+            parameters = p[0].numpy()
+            rank = r[0].numpy()
             rank = np.concatenate([rank, rank[0:1]], axis=0)
             print(rank)
 

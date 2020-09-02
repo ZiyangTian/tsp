@@ -1,6 +1,5 @@
 """Build TSP datasets and data loaders from data files."""
 import glob
-import numpy as np
 import torch
 
 from typing import Dict, Optional
@@ -15,6 +14,13 @@ class TSPDataset(torch_data.Dataset):
     route is a circle, the target rank can start at any node index. For consistency, all solution route
     are forced to start at the first node, that is, index zero. Thus, each line of a data file should be like:
         <float>,<float>,...,<float>;<index=0>,<index>,...,<index>
+    Each example of this dataset is a tuple of parameters, rank, and number of nodes. The parameters are drawn
+    from the left side content of the semicolon and the reshaped. The rank is drawn from the right side. Besides,
+    the original rank begins with index zero, but we want to make a prediction to each next index. That is,
+    for a rank <0, 3, 1, 4, 2>, we want to input a constant beginning index zero and output a prediction
+    <3, 1, 4, 2, 0>. Thus we roll the original rank by 1 towards the right so as to match our model's target
+    output.
+
         Arguments:
             file: A `str`, path to the data file. Defaults to `None`, that is, an empty dataset.
         Outputs:
@@ -45,12 +51,11 @@ class TSPDataset(torch_data.Dataset):
     def _parse_line(line):
         # type: (str) -> (torch.Tensor, torch.Tensor, torch.Tensor)
         parameter_part, rank_part = line.strip().split(';')
-        rank = np.array(list(map(int, rank_part.split(','))))
-        num_nodes = len(rank)
-        parameters = np.array(list(map(float, parameter_part.split(',')))).reshape((num_nodes, -1))
-        return (torch.tensor(parameters, dtype=torch.float),
-                torch.tensor(rank, dtype=torch.int64),
-                torch.tensor(num_nodes, dtype=torch.int64))
+        rank = torch.tensor(list(map(int, rank_part.split(','))), dtype=torch.int64).roll(-1)
+        num_nodes = torch.tensor(rank.shape[0], dtype=torch.int64)
+        parameters = torch.tensor(
+            list(map(float, parameter_part.split(','))), dtype=torch.float).reshape(rank.shape[0], -1)
+        return parameters, rank, num_nodes
 
 
 class TSPDataLoader(torch_data.DataLoader):

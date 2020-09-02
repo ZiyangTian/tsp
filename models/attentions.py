@@ -10,17 +10,17 @@ class Attention(torch.nn.Module):
     def forward(self, query, key, value=None, mask=None):
         """Forward propagation function.
         Arguments:
-            query: Query tensor of shape (batch_size, query_length, query_hidden_size).
-            key: Key tensor of shape (batch_size, kv_length, key_hidden_size).
-            value (optional): Value tensor of shape (batch_size, kv_length, value_hidden_size).
-            mask (optional): Mask tensor of shape (batch_size, query_length, kv_length).
+            query: A tensor of shape (batch_size, query_length, query_hidden_size).
+            key: A tensor of shape (batch_size, kv_length, key_hidden_size).
+            value (optional): A tensor of shape (batch_size, kv_length, value_hidden_size).
+            mask (optional): A tensor of shape (batch_size, query_length, kv_length).
         Returns:
             score: Attention score of shape (batch_size, query_length, kv_length).
             context_vector (optional): Context vector of shape (batch_size, query_length, value_hidden_size).
                 Only returns when `value` is specified.
         """
         score = self._score_fn(query, key)  # (batch_size, query_length, kv_length)
-        score += - 1e-9 * (1 - mask.to(dtype=query.dtype))
+        score += - 1e9 * (1 - mask.to(dtype=query.dtype))
         if value is None:
             return score
 

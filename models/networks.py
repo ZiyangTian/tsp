@@ -1,9 +1,5 @@
 """Pointer networks."""
-import functools
 import torch
-
-from typing import Any, Dict, Optional, Type
-from torch.nn.utils import rnn as rnn_utils
 
 from models import attentions
 from models import utils
@@ -15,7 +11,6 @@ class PointerNetwork(torch.nn.Module):
                  hidden_size,
                  rnn_type=torch.nn.GRU,
                  rnn_layers=1,
-                 rnn_bidirectional=False,
                  input_dropout=0.,
                  encoder_rnn_dropout=0.,
                  decoder_rnn_dropout=0.,
@@ -32,15 +27,13 @@ class PointerNetwork(torch.nn.Module):
             self.hidden_size,
             num_layers=rnn_layers,
             dropout=encoder_rnn_dropout,
-            batch_first=True,
-            bidirectional=rnn_bidirectional)
+            batch_first=True)
         self.decoder_rnn = rnn_type(
             self.hidden_size,
             self.hidden_size,
             num_layers=rnn_layers,
             dropout=decoder_rnn_dropout,
-            batch_first=True,
-            bidirectional=rnn_bidirectional)
+            batch_first=True)
         self.attention = attention_mechanism(
             attention_hidden_size or self.hidden_size,
             query_hidden_size=self.hidden_size,
@@ -52,7 +45,7 @@ class PointerNetwork(torch.nn.Module):
             inputs: A `torch.float32` tensor of shape (batch_size, max_len, input_size), representing
                 the input parameters.
             targets: A `torch.int64` tensor of shape (batch_size, max_len), representing the ground
-                truth of  output ranks. If specified, use teacher forcing.
+                truth of output ranks. If specified, use teacher forcing.
             lengths: A `torch.int64` tensor of shape (batch_size,), representing the valid sequence
                 lengths of each example.
         Returns:
@@ -76,7 +69,7 @@ class PointerNetwork(torch.nn.Module):
             input_index = initial_input_index
             attention_scores = []
             for i in range(max_len - 1):
-                rnn_input = utils.permute_tensor(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
+                rnn_input = utils.batch_gather(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
                 rnn_output, hidden = self.rnn(rnn_input, hidden)
                 attention_score = self.attention(rnn_output, encoder_outputs).permute(1, 0, 2)
                 input_index = attention_score.argmax(dim=-1)  # (batch_size)
@@ -84,9 +77,10 @@ class PointerNetwork(torch.nn.Module):
             return torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
 
         # Teacher forcing mode.
-        print(hidden_state)
-        decoder_rnn_inputs = utils.permute_tensor(encoder_outputs, targets)
-        decoder_rnn_outputs, _ = utils.dynamic_rnn(self.decoder_rnn, decoder_rnn_inputs, hidden_state)
+        decoder_inputs = targets.roll(1, dims=1)
+        decoder_rnn_inputs = utils.batch_gather(encoder_outputs, decoder_inputs)
+        decoder_rnn_outputs, _ = utils.dynamic_rnn(
+            self.decoder_rnn, decoder_rnn_inputs, lengths, hidden_state=hidden_state)
 
         padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
         steps_mask = utils.batch_steps_mask(targets)  # (batch_size, max_len, max_len)

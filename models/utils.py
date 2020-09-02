@@ -4,35 +4,31 @@ from typing import Optional
 from torch.nn.utils import rnn as rnn_utils
 
 
-def permute_tensor(sequence, ranks):
+def batch_gather(sequence, indices):
     # type: (torch.Tensor, torch.Tensor) -> torch.Tensor
-    """Forward propagation function.
+    """Batch gather from sequences.
         Arguments:
-            sequence: Padded tensor of shape (batch_size, input_length, input_size). Must be identity to
-                the encoder input.
-            ranks (optional): Ground truth of output ranks. Shape (batch_size, target_length).
-                If specified, use teacher forcing.
+            sequence: A tensor of shape (batch_size, length, ...).
+            indices: A tensor of shape (batch_size, num_indices).
         Returns:
-            permuted_inputs: Permuted inputs of shape (batch_size, target_length, input_size).
+            permuted_inputs: A tensor of shape (batch_size, num_indices, ...).
         """
-    ranks = torch.stack([ranks] * sequence.shape[-1], dim=-1)
-    permuted_inputs = torch.gather(sequence, 1, ranks)
+    indices = torch.stack([indices] * sequence.shape[-1], dim=-1)
+    permuted_inputs = torch.gather(sequence, 1, indices)
     return permuted_inputs
 
 
 def batch_sequence_mask(lengths, max_len=None, dtype=torch.bool):
     # type: (torch.Tensor, Optional[int], Optional[torch.dtype]) -> torch.Tensor
-    """Mask a batch of sequence by valid lengths.
+    """Create a batch of sequence masks by valid lengths.
         Arguments:
-            lengths: The valid length of each example. Shape (batch_size,).
-            max_len: The maximum length to padding.
-            dtype: The output data type, defaults to `torch.bool`.
+            lengths: A `torch.int64` tensor of shape (batch_size,), the valid length of each example.
+            max_len: An `int`, the maximum length to padding. Defaults to the maximum value of `lengths`.
+            dtype: A `torch.dtype`, the output data type.
         Returns:
-            mask: A binary tensor, true values for valid. Shape (batch_size, max_len).
+            mask: A binary tensor of shape (batch_size, max_len), true values for valid position.
     """
-    if max_len is None:
-        max_len = lengths.max()
-    return (torch.arange(max_len)[None, :] < lengths[:, None]).to(dtype=dtype)
+    return (torch.arange(max_len or lengths.max())[None, :] < lengths[:, None]).to(dtype=dtype)
 
 
 # def parallel_batch_permutation_mask(permutations):
@@ -76,15 +72,6 @@ def batch_steps_mask(steps, dtype=torch.bool):
     return torch.stack(masks, dim=1)
 
 
-# def attention_mask(targets=None, lengths=None):
-#     padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
-#     steps_mask = utils.batch_steps_mask(targets)  # (batch_size, max_len, max_len)
-#     attention_mask = utils.combine_masks(
-#         padding_mask.unsqueeze(dim=-1),
-#         padding_mask.unsqueeze(dim=-2),
-#         steps_mask)
-
-
 def combine_masks(*masks, dtype=None):
     masks = torch.broadcast_tensors(*masks)
     mask = torch.ones_like(masks[0], dtype=torch.bool)
@@ -94,31 +81,7 @@ def combine_masks(*masks, dtype=None):
 
 
 def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
-    print(inputs.shape, lengths.shape)
     packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False, batch_first=True)
     packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
     padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)
     return padded_outputs, hidden_state
-
-
-def main():
-    permutations = torch.tensor([
-        [0, 3, 0, 4, 1],
-        [0, 2, 1, 0, 0],
-        [0, 1, 4, 2, 3]])
-    mask = batch_steps_mask(permutations, dtype=torch.int)
-    print(mask)
-
-    # d = torch.tensor([0, 3, 1])
-    # e = torch.index_select(a, 0, d)
-    # masked = torch.tensor([
-    #          [0, 1, 1, 0, 1],
-    #          [0, 1, 0, 1, 1],
-    #          [0, 0, 1, 1, 1]], dtype=torch.int32)
-    # decoded = torch.tensor([2, 3, 4])
-    # new_mask = batch_permutation_decoding_mask(masked, decoded)
-    # print(new_mask)
-
-
-if __name__ == '__main__':
-    main()
