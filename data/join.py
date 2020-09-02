@@ -6,7 +6,7 @@ import random
 
 
 def main():
-    pattern = r'E:\Programs\DataSets\tsp\*'
+    pattern = r'E:\Programs\DataSets\tsp\tsp-4\*'
     files = glob.glob(pattern)
     bases = list(set(map(lambda f: f.split('.')[0], files)))
     # print(bases)
@@ -21,7 +21,7 @@ def main():
                 rank = list(rank[i:]) + list(rank[:i])
                 break
         data.append((parameters, rank))
-    with open(r'E:\Programs\DataSets\data2.txt', 'w') as f:
+    with open(r'E:\Programs\DataSets\tsp\data4.txt', 'w') as f:
         for d in data:
             f.write(','.join(map(str, d[0])) + ';' + ','.join(map(str, d[1])) + '\n')
 

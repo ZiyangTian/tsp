@@ -61,28 +61,43 @@ class PointerNetwork(torch.nn.Module):
         encoder_outputs, hidden_state = utils.dynamic_rnn(self.encoder_rnn, rnn_inputs, lengths)
         return encoder_outputs, hidden_state
 
-    def _decode(self, encoder_outputs, hidden_state, targets=None, lengths=None):
-        if targets is None:  # Inference mode.
-            max_len, batch_size, _ = rnn_inputs.shape
-            initial_input_index = torch.zeros(1, batch_size, dtype=torch.int64)
-            hidden = encoder_hidden
-            input_index = initial_input_index
-            attention_scores = []
-            for i in range(max_len - 1):
-                rnn_input = utils.batch_gather(rnn_inputs, input_index)  # (1, batch_size, hidden_size)
-                rnn_output, hidden = self.rnn(rnn_input, hidden)
-                attention_score = self.attention(rnn_output, encoder_outputs).permute(1, 0, 2)
-                input_index = attention_score.argmax(dim=-1)  # (batch_size)
-                attention_scores.append(attention_score)
-            return torch.cat(attention_scores, dim=0)  # (max_len-1, batch_size, max_len)
+    def _inference_decode(self, encoder_outputs, hidden_state, lengths=None):
+        batch_size, max_len, _ = encoder_outputs
+        if lengths is not None:
+            padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
+        else:
+            padding_mask = torch.ones(batch_size, max_len, dtype=torch.bool)
+        input_index = torch.zeros(batch_size, 1, dtype=torch.int64)
+        step_mask = torch.ones(batch_size, max_len, dtype=torch.bool)
+        logits = []
 
+        for i in range(max_len):
+            rnn_input = utils.batch_gather(encoder_outputs, input_index)  # (batch_size, 1, hidden_size)
+            decoder_rnn_output, hidden_state = utils.dynamic_rnn(
+                self.decoder_rnn,
+                rnn_input,
+                lengths=padding_mask[:, i].to(dtype=torch.int64),
+                hidden_state=hidden_state)
+            attention_mask = utils.combine_masks(
+                step_mask[:, None, :],
+                padding_mask[:, None, :],
+                padding_mask[:, i, None])
+            logit = self.attention(decoder_rnn_output, encoder_outputs, mask=attention_mask)  # (batch_size, 1, max_len)
+            logits.append(logit)
+            step_mask = utils.batch_step_mask(step_mask, logit.unsqueeze(1).softmax(-1))
+        return torch.cat(logits, dim=1)  # (max_len, batch_size, max_len)
+
+    def _teacher_forcing(self, encoder_outputs, hidden_state, targets, lengths=None):
         # Teacher forcing mode.
         decoder_inputs = targets.roll(1, dims=1)
         decoder_rnn_inputs = utils.batch_gather(encoder_outputs, decoder_inputs)
         decoder_rnn_outputs, _ = utils.dynamic_rnn(
             self.decoder_rnn, decoder_rnn_inputs, lengths, hidden_state=hidden_state)
 
-        padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
+        if lengths is None:
+            padding_mask = torch.ones_like(targets, dtype=torch.bool)
+        else:
+            padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
         steps_mask = utils.batch_steps_mask(targets)  # (batch_size, max_len, max_len)
         attention_mask = utils.combine_masks(
             padding_mask.unsqueeze(dim=-1),
@@ -91,3 +106,7 @@ class PointerNetwork(torch.nn.Module):
         logits = self.attention(decoder_rnn_outputs, encoder_outputs, mask=attention_mask)
         return logits
 
+    def _decode(self, encoder_outputs, hidden_state, targets=None, lengths=None):
+        if targets is None:
+            return self._inference_decode(encoder_outputs, hidden_state, lengths=lengths)
+        return self._teacher_forcing(encoder_outputs, hidden_state, targets, lengths=lengths)
