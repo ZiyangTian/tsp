@@ -4,10 +4,17 @@ from models import utils as model_utils
 
 
 def batch_tsp_loss(logits, targets, lengths):
+    # logits = logits.softmax(-1)
+    # with open('1.txt', 'w') as f1, open('2.txt', 'w') as f2:
+    #     for x in logits[0]:
+    #         f1.write('\n')
+    #         for y in x:
+    #             f1.write(str(y.item()) + '  ')
+    #     f2.write(str(targets[0].tolist()))
     mask = model_utils.batch_sequence_mask(lengths, targets.shape[1], dtype=logits.dtype)
     loss = torch.nn.functional.cross_entropy(
         logits.permute(0, 2, 1), targets, reduction='none') * mask
-    loss = loss.sum() / mask.sum()
+    loss = loss.sum(-1) / mask.sum(-1)
     return loss
 
 

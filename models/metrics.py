@@ -12,6 +12,7 @@ from models import utils as model_utils
 class Metric(torch.nn.Module):
     def __init__(self):
         super(Metric, self).__init__()
+        self.eval()
 
     def reset_states(self):
         pass
@@ -35,7 +36,8 @@ class MeanMetric(Metric):
         self.count = torch.zeros(())
 
     def forward(self, *args, **kwargs):
-        batch_metric_value = self.fn(*args, **kwargs)
+        with torch.no_grad():
+            batch_metric_value = self.fn(*args, **kwargs)
         self.total += batch_metric_value.sum()
         self.count += batch_metric_value.size()[0]
         return self.result()
@@ -52,41 +54,35 @@ class TSPLoss(MeanMetric):
         super(TSPLoss, self).__init__(metric_fn)
 
 
+def _accuracy(preds, targets, mask):
+    accuracies = (preds == targets).to(dtype=logits.dtype)
+    return accuracies.sum(-1) / mask.sum(-1)
+
+
 def batch_bidirectional_accuracy(_, logits, targets, lengths):
     # type: (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor) -> torch.Tensor
-
-    preds = logits.argmax(dim=-1).permute(1, 0)
-    targets = targets.permute(1, 0)
-    accuracies = []
-    for o, t, l in zip(preds, targets, lengths):
-        acc = max(
-            torch.mean((o[: l] == t[:l]).to(dtype=logits.dtype)),
-            torch.mean((o[: l].flip(0) == t[:l]).to(dtype=logits.dtype)))
-        accuracies.append(acc)
-    return torch.tensor(accuracies)
+    preds = logits.argmax(dim=-1)
+    reversed_targets = model_utils.batch_reverse_sequence(targets, lengths - 1)
+    mask = model_utils.batch_sequence_mask(lengths, max_len=targets.shape[-1], dtype=logits.dtype)
+    acc_1 = _accuracy(preds, targets, mask)
+    acc_2 = _accuracy(preds, reversed_targets, mask)
+    return torch.where(acc_1 > acc_2, acc_1, acc_2)
 
 
 def _batch_journey_error(inputs, logits, targets, lengths):  # padded with zeros.
-    preds = logits.argmax(dim=-1)
-    max_len, batch_size = preds.shape
-
-    pred_ranks = torch.cat([preds, torch.zeros(1, batch_size, dtype=preds.dtype)], dim=0)
-    targets = torch.cat([targets, torch.zeros(1, batch_size, dtype=preds.dtype)], dim=0)
-    pred = model_utils.batch_gather(inputs, pred_ranks)
-    pred = (pred[1:] - pred[:-1]).square().sum(dim=-1).sqrt().sum(dim=0)
-    truth = model_utils.batch_gather(inputs, targets)
-    truth = (truth[1:] - truth[:-1]).square().sum(dim=-1).sqrt().sum(dim=0)
-    return pred, truth
+    pred_journey = model_utils.batch_journey(inputs, logits.argmax(-1), lengths)
+    truth_journey = model_utils.batch_journey(inputs, targets, lengths)
+    return pred_journey, truth_journey
 
 
 def batch_journey_mae(inputs, logits, targets, lengths):  # padded with zeros.
-    pred, truth = _batch_journey_error(inputs, logits, targets, lengths)
-    return pred - truth  # usually > 0
+    pred_journey, truth_journey = _batch_journey_error(inputs, logits, targets, lengths)
+    return pred_journey - truth_journey  # usually > 0
 
 
 def batch_journey_mre(inputs, logits, targets, lengths):
-    pred, truth = _batch_journey_error(inputs, logits, targets, lengths)
-    return (pred - truth) / (truth + 1.e-6)
+    pred_journey, truth_journey = _batch_journey_error(inputs, logits, targets, lengths)
+    return (pred_journey - truth_journey) / (truth_journey + 1.e-6)
 
 
 class BidirectionalAccuracy(MeanMetric):

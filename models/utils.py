@@ -31,16 +31,14 @@ def batch_sequence_mask(lengths, max_len=None, dtype=torch.bool):
     return (torch.arange(max_len or lengths.max())[None, :] < lengths[:, None]).to(dtype=dtype)
 
 
-# def parallel_batch_permutation_mask(permutations):
-#     # (max_len, batch_size) must be a full permutation
-#     max_len, batch_size = permutations.size()
-#     indices = torch.arange(max_len)
-#     # a = torch.where(indices[:, None, None] - indices_last >= 1, permutations.unsqueeze(-1), indices_last)
-#     permutations, bools = torch.broadcast_tensors(
-#         permutations.permute(1, 0).unsqueeze(0),
-#         indices[:, None, None] - indices[None, None, :] <= 0)
-#     mask = torch.ones(max_len, batch_size, max_len, dtype=torch.bool).scatter(-1, permutations, bools)
-#     return mask
+def batch_reverse_sequence(sequences, lengths):
+    indices = torch.arange(sequences.shape[-1], dtype=torch.int64)
+    indices, lengths = torch.broadcast_tensors(indices[None, :], lengths[:, None])
+    gather_indices = torch.where(
+        indices < lengths,
+        lengths - indices - 1,
+        indices)
+    return torch.gather(sequences, 1, gather_indices)
 
 
 def batch_step_mask(masked, decoded):
@@ -70,6 +68,14 @@ def batch_steps_mask(steps, dtype=torch.bool):
         masked = batch_step_mask(masked, steps[:, i])
         masks.append(masked)
     return torch.stack(masks, dim=1)
+
+
+def batch_journey(parameters, ending, lengths):
+    # indices: starting zero at end
+    mask = batch_sequence_mask(lengths, max_len=ending.shape[-1], dtype=parameters.dtype)
+    ending = batch_gather(parameters, ending)
+    beginning = ending.roll(1, dims=1)
+    return ((ending - beginning).square().sum(-1) * mask).sqrt().sum(-1)
 
 
 def combine_masks(*masks, dtype=None):
