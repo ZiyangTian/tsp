@@ -55,7 +55,7 @@ class TSPLoss(MeanMetric):
 
 
 def _accuracy(preds, targets, mask):
-    accuracies = (preds == targets).to(dtype=logits.dtype)
+    accuracies = (preds == targets).to(dtype=mask.dtype)
     return accuracies.sum(-1) / mask.sum(-1)
 
 
