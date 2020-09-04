@@ -1,4 +1,7 @@
+import numpy as np
 import torch
+import time
+import matplotlib.pyplot as plt
 
 from typing import Optional
 from torch.nn.utils import rnn as rnn_utils
@@ -91,3 +94,26 @@ def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
     packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
     padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)
     return padded_outputs, hidden_state
+
+
+def _get_numpy(maybe_tensor):
+    if isinstance(maybe_tensor, torch.Tensor):
+        if maybe_tensor.requires_grad:
+            maybe_tensor = maybe_tensor.detach()
+        return maybe_tensor.cpu().numpy()
+    return np.array(maybe_tensor)
+
+
+def plot_solution(parameters, target, prediction):
+    parameters, target, prediction = _get_numpy(parameters), _get_numpy(target), _get_numpy(prediction)
+    target = np.concatenate([target, target[0:1]], axis=0)
+    prediction = np.concatenate([prediction, prediction[0:1]], axis=0)
+
+    plt.figure()
+    plt.plot(parameters[:, 0], parameters[:, 1], 'ro', color='red')
+    plt.plot(parameters[:, 0][target], parameters[:, 1][target], 'r-', color='green')
+    plt.plot(parameters[:, 0][prediction], parameters[:, 1][prediction], 'r--', color='blue')
+    plt.ion()
+    plt.pause(1)
+    plt.close()
+    # plt.show()

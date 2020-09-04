@@ -17,14 +17,14 @@ def plot_tsp(prefix):
 
 
 def main():
-    pattern = r'E:\Programs\DataSets\tsp\data4.txt'
-    dl = datasets.TSPDataLoader(pattern, batch_size=1, shuffle=True)
+    pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.train'
+    dl = datasets.TSPDataLoader(pattern, batch_size=1, shuffle=False, random_roll=True)
     for i, (p, r, _) in enumerate(dl):
         if i == 3:
             parameters = p[0].numpy()
             rank = r[0].numpy()
-            rank = np.concatenate([rank, rank[0:1]], axis=0)
             print(rank)
+            rank = np.concatenate([rank, rank[0:1]], axis=0)
 
             plt.figure()
             plt.plot(parameters[:, 0], parameters[:, 1], 'ro', color='red')

@@ -96,7 +96,7 @@ class PointerNetwork(torch.nn.Module):
         attention_mask = utils.combine_masks(
             padding_mask.unsqueeze(dim=-1),
             padding_mask.unsqueeze(dim=-2),
-            # steps_mask
+            steps_mask
         )
         logits = self.attention(decoder_rnn_outputs, encoder_outputs, mask=attention_mask)
         return logits

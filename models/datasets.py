@@ -1,6 +1,7 @@
 """Build TSP datasets and data loaders from data files."""
 import glob
 import torch
+import numpy as np
 
 from typing import Dict, Optional
 from torch.utils import data as torch_data
@@ -23,6 +24,8 @@ class TSPDataset(torch_data.Dataset):
 
         Arguments:
             file: A `str`, path to the data file. Defaults to `None`, that is, an empty dataset.
+            random_roll: A `bool`, whether to roll the example solution randomly. Usually set to true
+                for sample expansion.
         Outputs:
             A `tuple` of (parameters, rank, num_nodes).
                 parameters: A `torch.float32` tensor of shape (num_nodes, param_dim), the
@@ -31,8 +34,9 @@ class TSPDataset(torch_data.Dataset):
                     truth rank.
                 num_nodes: A `torch.int64` scalar tensor, the number of nodes.
     """
-    def __init__(self, file=None):
+    def __init__(self, file=None, random_roll=False):
         # type: (TSPDataset, Optional[None, str]) -> None
+        self._random_roll = random_roll
         if file is None:
             lines = []
         else:
@@ -42,7 +46,15 @@ class TSPDataset(torch_data.Dataset):
 
     def __getitem__(self, item):
         # type: (TSPDataset, int) -> (torch.Tensor, torch.Tensor, torch.Tensor)
-        return self._data[item]
+        parameters, rank, num_nodes = self._data[item]
+        if self._random_roll:
+            rank_shift = torch.randint(0, num_nodes, ()).item()
+            rank = rank.roll(rank_shift, dims=0)
+            parameters_shift = -rank[-1].item()
+            rank += parameters_shift
+            rank = torch.where(rank < 0, num_nodes + rank, rank)
+            parameters = parameters.roll(parameters_shift, dims=0)
+        return parameters, rank, num_nodes
 
     def __len__(self):
         return len(self._data)
@@ -64,6 +76,8 @@ class TSPDataLoader(torch_data.DataLoader):
             pattern: A `str`, data file pattern.
             batch_size: An `int`, batch size.
             shuffle: An `bool`, whether to shuffle the dataset.
+            random_roll: A `bool`, whether to roll the example solution randomly. Usually set to true
+                for sample expansion.
             kwargs: Parallel arguments for build the data loader, see `torch.utils.data.DataLoader`.
         Outputs:
             A `tuple` of (parameters, ranks, num_nodes).
@@ -75,10 +89,10 @@ class TSPDataLoader(torch_data.DataLoader):
                     (batch_size, max_len).
                 num_nodes: A `torch.int64` tensor of shape (batch_size,), the number of nodes.
     """
-    def __init__(self, pattern, batch_size=1, shuffle=False, **kwargs):
-        # type: (TSPDataLoader, str, int, bool, Dict) -> None
+    def __init__(self, pattern, batch_size=1, shuffle=False, random_roll=False, **kwargs):
+        # type: (TSPDataLoader, str, int, bool, bool, Dict) -> None
         files = glob.glob(pattern)
-        dataset = sum(map(TSPDataset, files), TSPDataset())
+        dataset = sum(map(lambda f: TSPDataset(file=f, random_roll=random_roll), files), TSPDataset())
 
         def collate_fn(examples):
             parameters, ranks, num_nodes = zip(*examples)

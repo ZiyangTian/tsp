@@ -1,9 +1,11 @@
 import tqdm
 import torch
+import random
 
 from models import losses
 from models import metrics
 from models import networks
+from models import utils
 
 
 class TSPModel(networks.PointerNetwork):
@@ -51,8 +53,18 @@ class TSPModel(networks.PointerNetwork):
         with tqdm.trange(len(data_loader)) as t:
             t.set_description(description)
             for _, data in zip(t, data_loader):
-                results = self.test_step(data)
-                t.set_postfix(**results)
+                logits, evaluations = self.test_step(data)
+                t.set_postfix(**evaluations)
+
+        # plot the first
+        inputs, targets, lengths = data
+        i = random.randint(0, lengths.shape[0])
+        length = lengths[i]
+        parameters = inputs[i][:length]
+        target = targets[i][:length]
+        prediction = logits[i][:length].argmax(-1)
+        utils.plot_solution(parameters, target, prediction)
+
         return {k: v.result().item() for (k, v) in self.metric_fns.items()}
 
     def train_step(self, data):
@@ -70,4 +82,4 @@ class TSPModel(networks.PointerNetwork):
         evaluations = {}
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, logits, targets, lengths).item()})
-        return evaluations
+        return logits, evaluations
