@@ -11,9 +11,10 @@ from models import utils
 class TSPModel(networks.PointerNetwork):
     def __init__(self, *args, **kwargs):
         super(TSPModel, self).__init__(*args, **kwargs)
+        self.eval_beam_size = kwargs.pop('eval_beam_size', None)
         self.loss_fn = losses.TSPLoss()
         self.metric_fns = {
-            'val_loss': metrics.TSPLoss(),
+            # 'val_loss': metrics.TSPLoss(),
             'bidirectional_accuracy': metrics.BidirectionalAccuracy(),
             'journey_mae': metrics.JourneyMAE(),
             'journey_mre': metrics.JourneyMRE()}
@@ -53,17 +54,17 @@ class TSPModel(networks.PointerNetwork):
         with tqdm.trange(len(data_loader)) as t:
             t.set_description(description)
             for _, data in zip(t, data_loader):
-                logits, evaluations = self.test_step(data)
+                predictions, evaluations = self.test_step(data)
                 t.set_postfix(**evaluations)
 
         # plot the first
-        inputs, targets, lengths = data
-        i = random.randint(0, lengths.shape[0])
-        length = lengths[i]
-        parameters = inputs[i][:length]
-        target = targets[i][:length]
-        prediction = logits[i][:length].argmax(-1)
-        utils.plot_solution(parameters, target, prediction)
+        # inputs, targets, lengths = data
+        # i = random.randint(0, lengths.shape[0])
+        # length = lengths[i]
+        # parameters = inputs[i][:length]
+        # target = targets[i][:length]
+        # prediction = predictions[i][:length]
+        # utils.plot_solution(parameters, target, prediction)
 
         return {k: v.result().item() for (k, v) in self.metric_fns.items()}
 
@@ -78,8 +79,9 @@ class TSPModel(networks.PointerNetwork):
 
     def test_step(self, data):
         inputs, targets, lengths = data
-        logits = self(inputs, lengths=lengths, targets=None)
+        # logits = self(inputs, lengths=lengths, targets=None)
+        predictions = self(inputs, lengths=lengths, targets=None)
         evaluations = {}
         for k, v in self.metric_fns.items():
-            evaluations.update({k: v(inputs, logits, targets, lengths).item()})
-        return logits, evaluations
+            evaluations.update({k: v(inputs, predictions, targets, lengths).item()})
+        return predictions, evaluations

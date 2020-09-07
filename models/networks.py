@@ -55,32 +55,30 @@ class PointerNetwork(torch.nn.Module):
         encoder_inputs = self.input_dropout(self.encoder_linear(inputs))
         encoder_outputs, hidden_state = utils.dynamic_rnn(self.encoder_rnn, encoder_inputs, lengths)
         if targets is None:
-            return self._inference_decode(encoder_outputs, hidden_state, lengths=lengths, inputs=encoder_inputs)
+            return self._inference(encoder_outputs, hidden_state, lengths=lengths, inputs=encoder_inputs, beam_size=5)
         return self._teacher_forcing(encoder_outputs, hidden_state, targets, lengths=lengths, inputs=encoder_inputs)
 
-    def _inference_decode(self, encoder_outputs, hidden_state, lengths=None, inputs=None, beam_size=None):
+    def _inference(self, encoder_outputs, hidden_state, lengths=None, inputs=None, beam_size=None):
+        beam_size = beam_size or 1
         batch_size, max_len, _ = encoder_outputs.size()
         if lengths is not None:
-            padding_mask = utils.batch_sequence_mask(lengths)  # (batch_size, max_len)
+            padding_mask = utils.batch_sequence_mask(lengths, max_len=max_len)  # (batch_size, max_len)
         else:
             padding_mask = torch.ones(batch_size, max_len, dtype=torch.bool)
 
         input_index = torch.zeros(batch_size, 1, 1, dtype=torch.int64)  # (batch_size, beam_size, 1)
         step_mask = torch.ones(batch_size, 1, max_len, dtype=torch.bool)  # (batch_size, beam_size, max_len)
-        hidden_state = hidden_state[:, None, :]  # (batch_size, 1, max_len)
-        # old_probs = torch.nn.functional.one_hot(  # (batch_size, beam_size, max_len)
-        #     torch.zeros(batch_size, beam_size, dtype=torch.int64),
-        #     num_classes=max_len)
+        hidden_state = hidden_state[..., None, :]  # (1, batch_size, beam_size, hidden_size)
         probs = torch.ones(batch_size, beam_size, dtype=torch.float32)  # (batch_size, beam_size)
         predictions = []
 
         for i in range(max_len):
-            rnn_input = utils.batch_gather(inputs, input_index.view(-1, 1))  # (batch_size*beam_size, 1, hidden_size)
-            decoder_rnn_output, new_hidden_state = self.decoder_rnn(rnn_input, hx=hidden_state.view(-1, self.hidden_size))
-            attention_mask = utils.combine_masks(    # (batch_size*beam_size, 1, max_len)
-                step_mask.view(-1, max_len)[:, None, :],
-                padding_mask[:, None, :],
-                padding_mask[:, i: i + 1, None])
+            rnn_input = utils.batch_gather(inputs, input_index.view(batch_size, -1))  # (batch_size, beam_size, hidden_size)
+            decoder_rnn_output, new_hidden_state = self.decoder_rnn(rnn_input.view(-1, 1, self.hidden_size), hx=hidden_state.view(1, -1, self.hidden_size))
+            attention_mask = utils.combine_masks(  # (batch_size*beam_size, 1, max_len)
+                step_mask[..., None, :],
+                padding_mask[:, None, None, :],
+                padding_mask[:, None, i: i + 1, None]).view(-1, 1, max_len)
             repeated_encoder_outputs = torch.stack(
                 [encoder_outputs] * (decoder_rnn_output.shape[0] // batch_size),
                 dim=1).view(-1, max_len, self.hidden_size)  # (batch_size*beam_size, max_len, hidden_size)
@@ -88,14 +86,19 @@ class PointerNetwork(torch.nn.Module):
             probs = probs[:, :, None] * logit.softmax(-1).reshape(batch_size, -1, max_len)  # (batch_size, beam_size, max_len)
             preds = torch.topk(probs.view(batch_size, -1), beam_size, dim=-1)
             if i == 0:
-                input_index = probs.indices.unsqueeze(-1)  # (batch_size, beam_size)
+                # input_index = preds.indices.unsqueeze(-1)  # (batch_size, beam_size, 1)
+                hidden_state = torch.cat([hidden_state] * beam_size, dim=-2)
+                step_mask = torch.cat([step_mask] * beam_size, dim=-2)
             else:
                 last_indices = preds.indices // max_len  # (batch_size, beam_size)
-                preds.append(torch.gather(input_index, -1, last_indices))
-                input_index = (preds.indices % max_len)[:, :, None]  # (batch_size, beam_size, 1)
+                # preds.append(torch.gather(input_index, -1, last_indices))
+                hidden_state = torch.gather(
+                    hidden_state, -2,
+                    torch.stack([last_indices[None, :, :]] * self.hidden_size, dim=-1))
+            input_index = (preds.indices % max_len)[:, :, None]  # (batch_size, beam_size, 1)
             probs = preds.values
             predictions.append(input_index)
-            step_mask = utils.batch_step_mask(step_mask.view(-1, max_len), input_index.flatten())
+            step_mask = utils.batch_step_mask(step_mask.view(-1, max_len), input_index.flatten()).reshape(batch_size, beam_size, -1)
         predictions = torch.cat(predictions, dim=-1)  # (batch_size, beam_size, max_len)
         pred_beam = probs.argmax(-1)  # (batch_size,)
         predictions = torch.gather(predictions, 1, torch.stack([pred_beam] * max_len, dim=-1)[:, None, :]).squeeze(1)
@@ -120,11 +123,3 @@ class PointerNetwork(torch.nn.Module):
         )
         logits = self.attention(decoder_rnn_outputs, encoder_outputs, mask=attention_mask)
         return logits
-
-
-def _beam_cat(tensor_list):
-    return torch.cat(tensor_list, dim=0)
-
-
-def _beam_split(tensor, beam_size):
-    return torch.split(tensor, beam_size, dim=0)
