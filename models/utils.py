@@ -96,6 +96,10 @@ def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
     return padded_outputs, hidden_state
 
 
+def stack_n(tensor, n, dim):
+    return torch.stack([tensor] * n, dim=dim)
+
+
 def _get_numpy(maybe_tensor):
     if isinstance(maybe_tensor, torch.Tensor):
         if maybe_tensor.requires_grad:

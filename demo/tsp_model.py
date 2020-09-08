@@ -27,8 +27,8 @@ def main():
         optimizer_obj=torch.optim.Adam,
         learning_rate=0.001)
 
-    history = model.fit(train_data_loader, valid_data_loader, 100)
-    print(history)
+    # history = model.fit(train_data_loader, valid_data_loader, 100)
+    # print(history)
 
     results = model.evaluate(test_data_loader)
     print(results)
