@@ -5,7 +5,6 @@ import random
 from models import losses
 from models import metrics
 from models import networks
-from models import utils
 
 
 class TSPModel(networks.PointerNetwork):
