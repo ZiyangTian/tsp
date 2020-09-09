@@ -10,8 +10,8 @@ from models import utils
 
 class TSPModel(networks.PointerNetwork):
     def __init__(self, *args, **kwargs):
-        super(TSPModel, self).__init__(*args, **kwargs)
         self.eval_beam_size = kwargs.pop('eval_beam_size', None)
+        super(TSPModel, self).__init__(*args, **kwargs)
         self.loss_fn = losses.TSPLoss()
         self.metric_fns = {
             # 'val_loss': metrics.TSPLoss(),
@@ -80,7 +80,7 @@ class TSPModel(networks.PointerNetwork):
     def test_step(self, data):
         inputs, targets, lengths = data
         # logits = self(inputs, lengths=lengths, targets=None)
-        predictions = self(inputs, lengths=lengths, targets=None)
+        predictions = self(inputs, lengths=lengths, targets=None, beam_size=self.eval_beam_size)
         evaluations = {}
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, predictions, targets, lengths).item()})

@@ -39,7 +39,7 @@ class PointerNetwork(torch.nn.Module):
             query_hidden_size=self.hidden_size,
             key_hidden_size=self.hidden_size)
 
-    def forward(self, inputs, targets=None, lengths=None):
+    def forward(self, inputs, targets=None, lengths=None, beam_size=None):
         """Forward propagation function.
         Arguments:
             inputs: A `torch.float32` tensor of shape (batch_size, max_len, input_size), representing
@@ -48,6 +48,7 @@ class PointerNetwork(torch.nn.Module):
                 truth of output ranks. If specified, use teacher forcing.
             lengths: A `torch.int64` tensor of shape (batch_size,), representing the valid sequence
                 lengths of each example.
+            beam_size:
         Returns:
             logits: A `torch.float32` tensor of shape (batch_size, max_len, max_len), representing
                 the pointer probabilities.
@@ -55,8 +56,8 @@ class PointerNetwork(torch.nn.Module):
         encoder_inputs = self.input_dropout(self.encoder_linear(inputs))
         encoder_outputs, hidden_state = utils.dynamic_rnn(self.encoder_rnn, encoder_inputs, lengths)
         if targets is None:
-            return self._inference(encoder_outputs, hidden_state, lengths=lengths, inputs=encoder_inputs, beam_size=5)
-        return self._teacher_forcing(encoder_outputs, hidden_state, targets, lengths=lengths, inputs=encoder_inputs)
+            return self._inference(encoder_outputs, hidden_state, lengths=lengths, inputs=encoder_inputs, beam_size=beam_size)
+        return self._teacher_forcing(encoder_outputs, hidden_state, targets=targets, lengths=lengths, inputs=encoder_inputs)
 
     def _inference(self, encoder_outputs, hidden_state, lengths=None, inputs=None, beam_size=None):
         beam_size = beam_size or 1
@@ -69,7 +70,7 @@ class PointerNetwork(torch.nn.Module):
         input_index = torch.zeros(batch_size, 1, 1, dtype=torch.int64)  # (batch_size, beam_size, 1)
         step_mask = torch.ones(batch_size, 1, max_len, dtype=torch.bool)  # (batch_size, beam_size, max_len)
         hidden_state = hidden_state[..., None, :]  # (1, batch_size, beam_size, hidden_size)
-        probs = torch.ones(batch_size, beam_size, dtype=torch.float32)  # (batch_size, beam_size)
+        log_probs = torch.zeros(batch_size, 1, dtype=torch.float32)  # (batch_size, beam_size)
         predictions = torch.empty(batch_size, beam_size, 0, dtype=torch.int64)  # (batch_size, beam_size, len)
 
         for i in range(max_len):  # For i == 0, dim(beam_size) is 1, else 0.
@@ -88,25 +89,26 @@ class PointerNetwork(torch.nn.Module):
                 decoder_rnn_output,  # (batch_size*beam_size, 1, hidden_size)
                 repeated_encoder_outputs,
                 mask=attention_mask)
-            probs = probs[:, :, None] * logit.softmax(-1).reshape(batch_size, -1, max_len)  # (batch_size, beam_size, max_len)
-            preds = torch.topk(probs.view(batch_size, -1), beam_size, dim=-1)  # (batch_size, beam_size*max_len)
+            log_probs = log_probs[:, :, None] + torch.log(logit.softmax(-1).reshape(batch_size, -1, max_len))  # (batch_size, beam_size, max_len)
+            preds = torch.topk(log_probs.view(batch_size, -1), beam_size, dim=-1)  # (batch_size, beam_size*max_len)
 
             input_index = (preds.indices % max_len)[:, :, None]  # (batch_size, beam_size, 1)
             selected_beams = preds.indices // max_len  # (batch_size, beam_size)
-            print(i, hidden_state.shape, selected_beams)
             hidden_state = torch.gather(
                 hidden_state, -2,
                 torch.stack([selected_beams[None, :, :]] * self.hidden_size, dim=-1))
             if i == 0:
                 step_mask = torch.cat([step_mask] * beam_size, dim=-2)
-                predictions = selected_beams[..., None]
+                predictions = input_index
             else:
+                step_mask = torch.gather(step_mask, -2, utils.stack_n(selected_beams, max_len, -1))
                 predictions = torch.gather(predictions, -2, utils.stack_n(selected_beams, predictions.shape[-1], -1))
+                predictions = torch.cat([predictions, input_index], dim=-1)
             step_mask = utils.batch_step_mask(  # (batch_size, beam_size, max_len)
                 step_mask.view(-1, max_len), input_index.flatten()).reshape(batch_size, beam_size, -1)
-            predictions = torch.cat([predictions, input_index], dim=-1)
-            probs = preds.values
-        pred_beam = probs.argmax(-1)  # (batch_size,)
+
+            log_probs = preds.values
+        pred_beam = log_probs.argmax(-1)  # (batch_size,)
         predictions = torch.gather(predictions, 1, torch.stack([pred_beam] * max_len, dim=-1)[:, None, :]).squeeze(1)
         return predictions  # (batch_size, max_len)
 
