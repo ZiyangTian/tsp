@@ -6,9 +6,9 @@ from models import tsp
 
 
 def main():
-    train_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.train'
-    valid_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.valid'
-    test_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.test'
+    train_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.train'
+    valid_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.valid'
+    test_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.test'
     train_data_loader = datasets.TSPDataLoader(train_pattern, batch_size=128, shuffle=True, random_roll=True, random_flip=True)
     valid_data_loader = datasets.TSPDataLoader(valid_pattern, batch_size=128, shuffle=False)
     test_data_loader = datasets.TSPDataLoader(test_pattern, batch_size=128, shuffle=False)
@@ -21,9 +21,8 @@ def main():
         input_dropout=0.1,
         encoder_rnn_dropout=0,
         decoder_rnn_dropout=0,
-        attention_mechanism=attentions.LoungAttention,
-        attention_hidden_size=None,
-        eval_beam_size=4)
+        attention_mechanism=attentions.BahdanauAttention,
+        attention_hidden_size=None)
 
     model.compile(
         optimizer_obj=torch.optim.Adam,

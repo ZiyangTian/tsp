@@ -4,19 +4,10 @@ import torch
 
 
 class Attention(torch.nn.Module):
-    """Base class for attention mechanisms.
-        Arguments:
-            hidden_size: An `int`, attention hidden_state size.
-            query_hidden_size: An `int`, query hidden_state size. Defaults to be identity to `hidden_size`.
-            key_hidden_size: An `int`, key hidden_state size. Defaults to be identity to `hidden_size`.
-            use_scale: A `bool`, whether to scale the score.
-            dropout: A `float` tensor like, attention dropout probability.
-    """
-    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None, use_scale=False, dropout=0.):
+    """Base class for attention mechanisms."""
+    def __init__(self, hidden_size, use_scale=False, dropout=0.):
         super(Attention, self).__init__()
         self.hidden_size = hidden_size
-        self.query_hidden_size = query_hidden_size or hidden_size
-        self.key_hidden_size = key_hidden_size or hidden_size
         if use_scale:
             self.scale = torch.tensor(self.hidden_size, dtype=torch.float32).sqrt().reciprocal()
         else:
@@ -41,8 +32,8 @@ class Attention(torch.nn.Module):
             return score
 
         attention_weights = self.dropout(score.softmax(dim=-1))
-        context_vector = attention_weights.bmm(value)
-        return attention_weights, context_vector
+        context_vector = attention_weights.bmm(value.permute(0, 2, 1))
+        return attention_weights, context_vector.permute
 
     @abc.abstractmethod
     def _score_fn(self, query, key):
@@ -62,9 +53,13 @@ class BahdanauAttention(Attention):
             hidden_size: An `int`, attention hidden_state size.
             query_hidden_size: An `int`, query hidden_state size. Defaults to be identity to `hidden_size`.
             key_hidden_size: An `int`, key hidden_state size. Defaults to be identity to `hidden_size`.
+
     """
-    def __init__(self, *args, **kwargs):
-        super(BahdanauAttention, self).__init__(*args, **kwargs)
+    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None, use_scale=False, dropout=0.):
+        super(BahdanauAttention, self).__init__(hidden_size, use_scale=use_scale, dropout=dropout)
+        self.query_hidden_size = query_hidden_size or hidden_size
+        self.key_hidden_size = key_hidden_size or hidden_size
+
         self.wq = torch.nn.Linear(self.query_hidden_size, self.hidden_size, bias=False)
         self.wk = torch.nn.Linear(self.key_hidden_size, self.hidden_size, bias=False)
         self.v = torch.nn.Linear(self.hidden_size, 1, bias=False)
@@ -82,12 +77,20 @@ class LoungAttention(Attention):
             query_hidden_size: An `int`, query hidden_state size. Defaults to be identity to `hidden_size`.
             key_hidden_size: An `int`, key hidden_state size. Defaults to be identity to `hidden_size`.
     """
-    def __init__(self, *args, **kwargs):
-        super(LoungAttention, self).__init__(*args, **kwargs)
+    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None, use_scale=False, dropout=0.):
+        super(LoungAttention, self).__init__(hidden_size, use_scale=use_scale, dropout=dropout)
+        self.query_hidden_size = query_hidden_size or hidden_size
+        self.key_hidden_size = key_hidden_size or hidden_size
+
         self.wq = torch.nn.Linear(self.query_hidden_size, self.hidden_size, bias=False)
         self.wk = torch.nn.Linear(self.key_hidden_size, self.hidden_size, bias=False)
 
     def _score_fn(self, query, key):
         query = self.wq(query)
         key = self.wk(key)
+        return query.bmm(key.permute(0, 2, 1))
+
+
+class DotProductAttention(Attention):
+    def _score_fn(self, query, key):
         return query.bmm(key.permute(0, 2, 1))
