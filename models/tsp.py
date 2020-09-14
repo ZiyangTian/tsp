@@ -70,7 +70,7 @@ class TSPModel(networks.PointerSequenceToSequence):
 
     def train_step(self, data):
         inputs, targets, lengths = data
-        logits, _ = self(inputs, lengths=lengths, targets=targets)
+        logits, _ = self(inputs, lengths=lengths, targets=targets, teacher_forcing_prob=1.)
         loss = self.loss_fn(logits, targets, lengths)
         loss.backward()
         self.optimizer.step()
@@ -79,7 +79,7 @@ class TSPModel(networks.PointerSequenceToSequence):
 
     def test_step(self, data):
         inputs, targets, lengths = data
-        _, predictions = self(inputs, lengths=lengths, targets=None)
+        _, predictions = self(inputs, lengths=lengths, targets=None, teacher_forcing_prob=0.)
         evaluations = {}
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, predictions, targets, lengths).item()})

@@ -105,7 +105,7 @@ class PointerSequenceToSequence(torch.nn.Module):
             logits.append(logit)
             predictions.append(prediction)
             if teacher_forcing_prob == 1. or torch.rand(()) < teacher_forcing_prob:
-                decoder_input_index = targets[i: i + 1]
+                decoder_input_index = targets[:, i: i + 1]
             else:
                 decoder_input_index = prediction
             step_mask = utils.batch_step_mask(step_mask, decoder_input_index.squeeze(-1))
@@ -130,6 +130,6 @@ if __name__ == '__main__':
         [3, 4, 1, 2, 0],
         [2, 1, 0, 0, 0]
     ])
-    logits, predictions = model(inputs, lengths=lengths, targets=targets)
-    print(logits.shape, predictions.shape)
+    logits, predictions = model(inputs, lengths=lengths, targets=targets, teacher_forcing_prob=0.)
+    print(logits.shape, predictions.shape, predictions)
 
