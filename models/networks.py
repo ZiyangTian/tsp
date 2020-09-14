@@ -90,10 +90,9 @@ class PointerSequenceToSequence(torch.nn.Module):
         logits, predictions = [], []
 
         for i in range(max_len):
-            self.seq2seq_attention(hidden_state.sum(0), )
             decoder_input = utils.batch_gather(dense_inputs, decoder_input_index)  # N, 1, D
             context, _ = self.seq2seq_attention(  # N, 1, H
-                hidden_state.permute(1, 0, 2).view(batch_size, 1, -1), encoder_outputs, encoder_outputs)
+                hidden_state.permute(1, 0, 2).reshape(batch_size, 1, -1), encoder_outputs, encoder_outputs, mask=padding_mask[])
             concatenated_input = torch.cat([context, decoder_input], dim=-1)  # N, 1, H+D
             decoder_output, hidden_state = self.decoder_rnn(concatenated_input, hidden_state)  # N, 1, H; ...
             pointer_mask = utils.combine_masks(  # N, 1, L
@@ -117,3 +116,17 @@ class PointerSequenceToSequence(torch.nn.Module):
         logits = self.pointer_attention(dense_outputs, dense_inputs, mask=mask)
         predictions = logits.argmax(-1)
         return logits, predictions
+
+
+if __name__ == '__main__':
+    model = PointerSequenceToSequence(2, 8, 6, rnn_layers=2, pointer_attention_mechanism=attentions.LoungAttention)
+    inputs = torch.randn(3, 5, 2)
+    lengths = torch.tensor([4, 5, 3])
+    targets = torch.tensor([
+        [3, 1, 2, 0, 0],
+        [3, 4, 1, 2, 0],
+        [2, 1, 0, 0, 0]
+    ])
+    logits, predictions = model(inputs, lengths=lengths, targets=targets)
+    print(logits.shape, predictions.shape)
+

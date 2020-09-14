@@ -19,20 +19,20 @@ class Attention(torch.nn.Module):
         Arguments:
             query: A tensor of shape (batch_size, query_length, query_hidden_size).
             key: A tensor of shape (batch_size, kv_length, key_hidden_size).
-            value (optional): A tensor of shape (batch_size, kv_length, value_hidden_size).
+            value (optional): A tensor of shape (batch_size, kv_length, hidden_size).
             mask (optional): A tensor of shape (batch_size, query_length, kv_length).
         Returns:
             score: Attention score of shape (batch_size, query_length, kv_length).
-            context_vector (optional): Context vector of shape (batch_size, query_length, value_hidden_size).
+            context_vector (optional): Context vector of shape (batch_size, query_length, hidden_size).
                 Only returns when `value` is specified.
         """
         score = self._score_fn(query, key) * self.scale  # (batch_size, query_length, kv_length)
-        score += - 1e9 * (1 - mask.to(dtype=query.dtype))
+        score += -1e9 * (1 - mask.to(dtype=query.dtype))
         if value is None:
             return score
 
         attention_weights = self.dropout(score.softmax(dim=-1))
-        context_vector = attention_weights.bmm(value.permute(0, 2, 1))
+        context_vector = attention_weights.bmm(value)
         return context_vector, attention_weights
 
     @abc.abstractmethod
