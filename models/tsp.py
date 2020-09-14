@@ -7,7 +7,7 @@ from models import metrics
 from models import networks
 
 
-class TSPModel(networks.PointerNetwork):
+class TSPModel(networks.PointerSequenceToSequence):
     def __init__(self, *args, **kwargs):
         super(TSPModel, self).__init__(*args, **kwargs)
         self.loss_fn = losses.TSPLoss()
@@ -22,7 +22,7 @@ class TSPModel(networks.PointerNetwork):
         self.optimizer = optimizer_obj(self.parameters(), learning_rate, **kwargs)
 
     def fit(self, train_data_loader, eval_data_loader, num_epochs):
-        history = dict(zip(['loss'] + list(self.metric_fns.keys()), [[] for _ in range(5)]))
+        history = dict(zip(['loss'] + list(self.metric_fns.keys()), [[] for _ in range(4)]))
 
         for epoch in range(1, 1 + num_epochs):
             epoch_loss = self.train_epoch(train_data_loader, description='Epoch {} training'.format(epoch))
@@ -38,6 +38,8 @@ class TSPModel(networks.PointerNetwork):
         with tqdm.trange(len(data_loader)) as t:
             t.set_description(description)
             for n, data in zip(t, data_loader):
+                if torch.rand(()) > 0.1:
+                    continue
                 loss = self.train_step(data)
                 batch_losses += loss
                 t.set_postfix(loss=loss)
@@ -68,7 +70,7 @@ class TSPModel(networks.PointerNetwork):
 
     def train_step(self, data):
         inputs, targets, lengths = data
-        logits, _ = self(inputs, lengths=lengths, targets=targets)
+        logits, _ = self(inputs, lengths=lengths, targets=targets, teacher_forcing_prob=1.)
         loss = self.loss_fn(logits, targets, lengths)
         loss.backward()
         self.optimizer.step()
@@ -77,7 +79,7 @@ class TSPModel(networks.PointerNetwork):
 
     def test_step(self, data):
         inputs, targets, lengths = data
-        _, predictions = self(inputs, lengths=lengths, targets=None)
+        _, predictions = self(inputs, lengths=lengths, targets=None, teacher_forcing_prob=0.)
         evaluations = {}
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, predictions, targets, lengths).item()})

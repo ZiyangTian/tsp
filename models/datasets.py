@@ -1,7 +1,6 @@
 """Build TSP datasets and data loaders from data files."""
 import glob
 import torch
-import numpy as np
 
 from typing import Dict, Optional
 from torch.utils import data as torch_data
