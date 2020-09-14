@@ -6,23 +6,30 @@ from models import tsp
 
 
 def main():
-    train_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.train'
-    valid_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.valid'
+    train_pattern = r'E:\Programs\DataSets\tsp\train\tsp_all_len*.data'
+    valid_pattern = r'E:\Programs\DataSets\tsp\train\tsp_10_test_exact.data'
     test_pattern = r'/Users/Tianziyang/Desktop/data/tsp/tsp.5-20.test'
     train_data_loader = datasets.TSPDataLoader(train_pattern, batch_size=128, shuffle=True, random_roll=True, random_flip=True)
     valid_data_loader = datasets.TSPDataLoader(valid_pattern, batch_size=128, shuffle=False)
     test_data_loader = datasets.TSPDataLoader(test_pattern, batch_size=128, shuffle=False)
 
     model = tsp.TSPModel(
-        input_size=2,
-        hidden_size=128,
-        rnn_layers=1,
+        2,
+        256,
+        128,
         rnn_type=torch.nn.GRU,
-        input_dropout=0.1,
-        encoder_rnn_dropout=0,
-        decoder_rnn_dropout=0,
-        attention_mechanism=attentions.BahdanauAttention,
-        attention_hidden_size=None)
+        rnn_layers=2,
+        encoder_input_dropout=0.1,
+        decoder_input_dropout=0.1,
+        encoder_rnn_dropout=0.1,
+        decoder_rnn_dropout=0.1,
+        output_dropout=0.1,
+        seq2seq_attention_mechanism=attentions.BahdanauAttention,
+        seq2seq_attention_hidden_size=None,
+        seq2seq_attention_dropout=0.1,
+        pointer_attention_mechanism=attentions.LoungAttention,
+        pointer_attention_hidden_size=None,
+        pointer_attention_dropout=0.1)
 
     model.compile(
         optimizer_obj=torch.optim.Adam,

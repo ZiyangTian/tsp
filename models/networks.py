@@ -22,7 +22,7 @@ class PointerSequenceToSequence(torch.nn.Module):
                  seq2seq_attention_dropout=0.,
                  pointer_attention_mechanism=attentions.BahdanauAttention,
                  pointer_attention_hidden_size=None,
-                 pointer_attention_dropout=0.,):
+                 pointer_attention_dropout=0.):
         super(PointerSequenceToSequence, self).__init__()
         self.input_size = input_size
         self.dense_size = dense_size
@@ -38,7 +38,7 @@ class PointerSequenceToSequence(torch.nn.Module):
             dropout=encoder_rnn_dropout,
             batch_first=True)
         self.decoder_rnn = rnn_type(
-            self.dense_size,
+            self.dense_size + self.hidden_size,
             self.hidden_size,
             num_layers=rnn_layers,
             dropout=decoder_rnn_dropout,
@@ -50,7 +50,7 @@ class PointerSequenceToSequence(torch.nn.Module):
         self.output_dense = torch.nn.Linear(self.hidden_size, self.dense_size)
         self.output_dropout = torch.nn.Dropout(output_dropout)
         self.pointer_attention = pointer_attention_mechanism(
-            pointer_attention_hidden_size or self.hidden_size,
+            pointer_attention_hidden_size or self.dense_size,
             dropout=pointer_attention_dropout)
 
     def forward(self, inputs, lengths=None, targets=None, teacher_forcing_prob=0.5):
@@ -92,12 +92,15 @@ class PointerSequenceToSequence(torch.nn.Module):
         for i in range(max_len):
             decoder_input = utils.batch_gather(dense_inputs, decoder_input_index)  # N, 1, D
             context, _ = self.seq2seq_attention(  # N, 1, H
-                hidden_state.permute(1, 0, 2).reshape(batch_size, 1, -1), encoder_outputs, encoder_outputs, mask=padding_mask[])
+                hidden_state.permute(1, 0, 2).reshape(batch_size, 1, -1),
+                encoder_outputs,
+                encoder_outputs,
+                mask=utils.combine_masks(padding_mask[:, i: i + 1, None], padding_mask.unsqueeze(1)))
             concatenated_input = torch.cat([context, decoder_input], dim=-1)  # N, 1, H+D
             decoder_output, hidden_state = self.decoder_rnn(concatenated_input, hidden_state)  # N, 1, H; ...
             pointer_mask = utils.combine_masks(  # N, 1, L
-                step_mask.unsqueeze(1), padding_mask[:, i], padding_mask.unsqueeze(-1))
-            logit, prediction = self._pointer(dense_inputs, decoder_input, mask=pointer_mask)  # N, 1, L; N, 1
+                step_mask.unsqueeze(1), padding_mask[:, i: i + 1, None], padding_mask.unsqueeze(1))
+            logit, prediction = self._pointer(dense_inputs, decoder_output, mask=pointer_mask)  # N, 1, L; N, 1
 
             logits.append(logit)
             predictions.append(prediction)
@@ -105,7 +108,7 @@ class PointerSequenceToSequence(torch.nn.Module):
                 decoder_input_index = targets[i]
             else:
                 decoder_input_index = prediction
-            step_mask = utils.batch_step_mask(step_mask, prediction.squeeze(-1))
+            step_mask = utils.batch_step_mask(step_mask, decoder_input_index.squeeze(-1))
 
         logits = torch.cat(logits, dim=1)
         predictions = torch.cat(predictions, dim=1)

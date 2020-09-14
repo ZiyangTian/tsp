@@ -7,7 +7,7 @@ from models import metrics
 from models import networks
 
 
-class TSPModel(networks.PointerNetwork):
+class TSPModel(networks.PointerSequenceToSequence):
     def __init__(self, *args, **kwargs):
         super(TSPModel, self).__init__(*args, **kwargs)
         self.loss_fn = losses.TSPLoss()
@@ -38,6 +38,8 @@ class TSPModel(networks.PointerNetwork):
         with tqdm.trange(len(data_loader)) as t:
             t.set_description(description)
             for n, data in zip(t, data_loader):
+                if torch.rand(()) > 0.05:
+                    continue
                 loss = self.train_step(data)
                 batch_losses += loss
                 t.set_postfix(loss=loss)
