@@ -2,31 +2,38 @@
 import abc
 import torch
 
-from typing import Optional
-
 
 class Attention(torch.nn.Module):
     """Base class for attention mechanisms."""
+    def __init__(self, hidden_size, use_scale=False, dropout=0.):
+        super(Attention, self).__init__()
+        self.hidden_size = hidden_size
+        if use_scale:
+            self.scale = torch.tensor(self.hidden_size, dtype=torch.float32).sqrt().reciprocal()
+        else:
+            self.scale = torch.ones((), dtype=torch.float32)
+        self.dropout = torch.nn.Dropout(dropout)
+
     def forward(self, query, key, value=None, mask=None):
         """Forward propagation function.
         Arguments:
             query: A tensor of shape (batch_size, query_length, query_hidden_size).
             key: A tensor of shape (batch_size, kv_length, key_hidden_size).
-            value (optional): A tensor of shape (batch_size, kv_length, value_hidden_size).
+            value (optional): A tensor of shape (batch_size, kv_length, hidden_size).
             mask (optional): A tensor of shape (batch_size, query_length, kv_length).
         Returns:
             score: Attention score of shape (batch_size, query_length, kv_length).
-            context_vector (optional): Context vector of shape (batch_size, query_length, value_hidden_size).
+            context_vector (optional): Context vector of shape (batch_size, query_length, hidden_size).
                 Only returns when `value` is specified.
         """
-        score = self._score_fn(query, key)  # (batch_size, query_length, kv_length)
-        score += - 1e9 * (1 - mask.to(dtype=query.dtype))
+        score = self._score_fn(query, key) * self.scale  # (batch_size, query_length, kv_length)
+        score += -1e9 * (1 - mask.to(dtype=query.dtype))
         if value is None:
             return score
 
-        attention_weights = score.softmax(dim=-1)
-        context_vector = attention_weights.bmm(value.permute(0, 2, 1))
-        return attention_weights, context_vector.permute
+        attention_weights = self.dropout(score.softmax(dim=-1))
+        context_vector = attention_weights.bmm(value)
+        return context_vector, attention_weights
 
     @abc.abstractmethod
     def _score_fn(self, query, key):
@@ -46,11 +53,10 @@ class BahdanauAttention(Attention):
             hidden_size: An `int`, attention hidden_state size.
             query_hidden_size: An `int`, query hidden_state size. Defaults to be identity to `hidden_size`.
             key_hidden_size: An `int`, key hidden_state size. Defaults to be identity to `hidden_size`.
+
     """
-    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None):
-        # type: (BahdanauAttention, int, Optional[None, int], Optional[None, int]) -> None
-        super(BahdanauAttention, self).__init__()
-        self.hidden_size = hidden_size
+    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None, use_scale=False, dropout=0.):
+        super(BahdanauAttention, self).__init__(hidden_size, use_scale=use_scale, dropout=dropout)
         self.query_hidden_size = query_hidden_size or hidden_size
         self.key_hidden_size = key_hidden_size or hidden_size
 
@@ -71,10 +77,8 @@ class LoungAttention(Attention):
             query_hidden_size: An `int`, query hidden_state size. Defaults to be identity to `hidden_size`.
             key_hidden_size: An `int`, key hidden_state size. Defaults to be identity to `hidden_size`.
     """
-    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None):
-        # type: (LoungAttention, int, Optional[None, int], Optional[None, int]) -> None
-        super(LoungAttention, self).__init__()
-        self.hidden_size = hidden_size
+    def __init__(self, hidden_size, query_hidden_size=None, key_hidden_size=None, use_scale=False, dropout=0.):
+        super(LoungAttention, self).__init__(hidden_size, use_scale=use_scale, dropout=dropout)
         self.query_hidden_size = query_hidden_size or hidden_size
         self.key_hidden_size = key_hidden_size or hidden_size
 
@@ -84,4 +88,9 @@ class LoungAttention(Attention):
     def _score_fn(self, query, key):
         query = self.wq(query)
         key = self.wk(key)
+        return query.bmm(key.permute(0, 2, 1))
+
+
+class DotProductAttention(Attention):
+    def _score_fn(self, query, key):
         return query.bmm(key.permute(0, 2, 1))

@@ -89,7 +89,9 @@ def combine_masks(*masks, dtype=None):
     return mask.to(dtype=dtype or masks[0].dtype)
 
 
-def dynamic_rnn(rnn, inputs, lengths, hidden_state=None):
+def dynamic_rnn(rnn, inputs, lengths=None, hidden_state=None):
+    if lengths is None:
+        return rnn(inputs, hidden_state)
     packed_rnn_inputs = rnn_utils.pack_padded_sequence(inputs, lengths, enforce_sorted=False, batch_first=True)
     packed_rnn_outputs, hidden_state = rnn(packed_rnn_inputs, hidden_state)
     padded_outputs, _ = rnn_utils.pad_packed_sequence(packed_rnn_outputs, batch_first=True)

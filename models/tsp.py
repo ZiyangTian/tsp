@@ -5,12 +5,10 @@ import random
 from models import losses
 from models import metrics
 from models import networks
-from models import utils
 
 
 class TSPModel(networks.PointerNetwork):
     def __init__(self, *args, **kwargs):
-        self.eval_beam_size = kwargs.pop('eval_beam_size', None)
         super(TSPModel, self).__init__(*args, **kwargs)
         self.loss_fn = losses.TSPLoss()
         self.metric_fns = {
@@ -70,7 +68,7 @@ class TSPModel(networks.PointerNetwork):
 
     def train_step(self, data):
         inputs, targets, lengths = data
-        logits = self(inputs, lengths=lengths, targets=targets)
+        logits, _ = self(inputs, lengths=lengths, targets=targets)
         loss = self.loss_fn(logits, targets, lengths)
         loss.backward()
         self.optimizer.step()
@@ -79,8 +77,7 @@ class TSPModel(networks.PointerNetwork):
 
     def test_step(self, data):
         inputs, targets, lengths = data
-        # logits = self(inputs, lengths=lengths, targets=None)
-        predictions = self(inputs, lengths=lengths, targets=None, beam_size=self.eval_beam_size)
+        _, predictions = self(inputs, lengths=lengths, targets=None)
         evaluations = {}
         for k, v in self.metric_fns.items():
             evaluations.update({k: v(inputs, predictions, targets, lengths).item()})
