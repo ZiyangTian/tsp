@@ -33,7 +33,7 @@ class Attention(torch.nn.Module):
 
         attention_weights = self.dropout(score.softmax(dim=-1))
         context_vector = attention_weights.bmm(value.permute(0, 2, 1))
-        return attention_weights, context_vector.permute
+        return context_vector, attention_weights
 
     @abc.abstractmethod
     def _score_fn(self, query, key):
